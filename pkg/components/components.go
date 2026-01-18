@@ -6,7 +6,6 @@ import (
 	"beautifulmess/pkg/core"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	lua "github.com/yuin/gopher-lua"
 )
 
 type Transform struct {
@@ -15,8 +14,9 @@ type Transform struct {
 }
 
 type Physics struct {
-	Velocity, Acceleration core.Vector2
+	Velocity, Acceleration   core.Vector2
 	MaxSpeed, Friction, Mass float64
+	GravityMultiplier        float64
 }
 
 type Render struct {
@@ -26,11 +26,17 @@ type Render struct {
 }
 
 type AI struct {
-	LState     *lua.LState
-	ScriptPath string
+	ScriptName string
 	TargetID   int
 }
 
 type Tag struct {
 	Name string
 }
+
+type GravityWell struct {
+	Radius float64
+	Mass   float64
+}
+
+type InputControlled struct{}

@@ -4,66 +4,57 @@ import (
 	"math"
 
 	"beautifulmess/pkg/core"
-	"beautifulmess/pkg/level"
 	"beautifulmess/pkg/world"
 )
 
-func SystemPhysics(w *world.World, lvl *level.Level) {
+func SystemPhysics(w *world.World) {
 	for id, phys := range w.Physics {
 		trans := w.Transforms[id]
 		if trans == nil {
 			continue
 		}
 
-		// 1. Gravity Logic
-		for _, well := range lvl.Wells {
-			dx := well.Position.X - trans.Position.X
-			dy := well.Position.Y - trans.Position.Y
+		// Calculate gravitational pull from all wells
+		for wellID, well := range w.GravityWells {
+			wellTrans := w.Transforms[wellID]
+			if wellTrans == nil {
+				continue
+			}
 
-			// Toroidal Distance: Gravity wraps around the screen too!
-			if dx > core.ScreenWidth/2 {
-				dx -= core.ScreenWidth
-			}
-			if dx < -core.ScreenWidth/2 {
-				dx += core.ScreenWidth
-			}
-			if dy > core.ScreenHeight/2 {
-				dy -= core.ScreenHeight
-			}
-			if dy < -core.ScreenHeight/2 {
-				dy += core.ScreenHeight
-			}
+			// Compute force vector across wrapped boundaries so gravity affects entities
+			// from the "other side" of the screen.
+			delta := core.VecToWrapped(trans.Position, wellTrans.Position)
+			dx, dy := delta.X, delta.Y
 
 			d := math.Sqrt(dx*dx + dy*dy)
 			if d < 10 {
 				d = 10
-			} // Prevent singularities (div by zero)
+			} // Prevent division-by-zero singularities
 
-			// Gravity falls off with distance squared
+			// Inverse-square law for gravity
 			force := (well.Mass * 500) / (d * d)
 			if force > 2.0 {
 				force = 2.0
-			} // Cap force to prevent glitchy teleporting
+			} // Clamp force to avoid instability at close range
 
-			// THE TRAP: If it's the Spectre and she's inside the event horizon...
-			if tag, ok := w.Tags[id]; ok && tag.Name == "spectre" && d < well.Radius {
-				force *= 3.5 // Crush her
-				// Note: We used to apply drag here, but keeping momentum creates a cool "Orbit" effect
+			// Apply entity-specific gravity susceptibility
+			if phys.GravityMultiplier > 0 {
+				force *= phys.GravityMultiplier
 			}
 
 			phys.Acceleration.X += (dx / d) * force
 			phys.Acceleration.Y += (dy / d) * force
 		}
 
-		// 2. Integration (Velocity Verlet lite)
+		// Semi-implicit Euler integration
 		phys.Velocity.X += phys.Acceleration.X
 		phys.Velocity.Y += phys.Acceleration.Y
 
-		// 3. Friction (The "Soup" factor)
+		// Apply friction to simulate medium resistance
 		phys.Velocity.X *= phys.Friction
 		phys.Velocity.Y *= phys.Friction
 
-		// 4. Speed Limit (Safety)
+		// Clamp velocity to maintain control and prevent tunneling
 		speed := math.Sqrt(phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y)
 		if speed > phys.MaxSpeed {
 			scale := phys.MaxSpeed / speed
@@ -71,11 +62,11 @@ func SystemPhysics(w *world.World, lvl *level.Level) {
 			phys.Velocity.Y *= scale
 		}
 
-		// 5. Update Position
+		// Update Position
 		trans.Position.X += phys.Velocity.X
 		trans.Position.Y += phys.Velocity.Y
 
-		// 6. Toroidal Wrap (The Infinite Loop)
+		// Wrap position to enforce toroidal topology
 		if trans.Position.X < 0 {
 			trans.Position.X += core.ScreenWidth
 		}

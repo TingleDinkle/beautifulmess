@@ -10,7 +10,7 @@ import (
 
 // SystemEntropy: Handles the fading trails.
 func SystemEntropy(w *world.World, frostMask *image.RGBA) {
-	// Heal the world (fade trails)
+	// Slowly clear the alpha channel to create a fading trail effect
 	pix := frostMask.Pix
 	for i := 3; i < len(pix); i += 4 {
 		a := int(pix[i])
@@ -19,20 +19,20 @@ func SystemEntropy(w *world.World, frostMask *image.RGBA) {
 		} // +2 Alpha per frame
 	}
 
-	// Create new scars (trails)
+	// Draw entity positions into the frost buffer
 	for id, trans := range w.Transforms {
 		if w.Renders[id] == nil {
 			continue
 		}
 
-		// Scale world pos to mist resolution
+		// Map game coordinates to the lower-resolution mist buffer
 		sx := int(trans.Position.X * (float64(core.MistWidth) / core.ScreenWidth))
 		sy := int(trans.Position.Y * (float64(core.MistHeight) / core.ScreenHeight))
 
 		rad := 2
 		if tag, ok := w.Tags[id]; ok && tag.Name == "spectre" {
 			rad = 3
-		} // She leaves a bigger mark
+		} // Spectre entities leave larger trails for visual distinction
 
 		meltRetro(frostMask, sx, sy, rad, 100)
 	}
@@ -40,10 +40,15 @@ func SystemEntropy(w *world.World, frostMask *image.RGBA) {
 
 func meltRetro(img *image.RGBA, cx, cy, r, val int) {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
-	offsets := [][2]int{{0, 0}, {w, 0}, {-w, 0}, {0, h}, {0, -h}}
+	// Iterate over 9 neighbors (center + 8) to ensure trails wrap correctly across screen edges
+	offsets := [][2]int{
+		{0, 0}, {w, 0}, {-w, 0}, {0, h}, {0, -h},
+		{w, h}, {w, -h}, {-w, h}, {-w, -h},
+	}
 
 	for _, off := range offsets {
 		tcx, tcy := cx+off[0], cy+off[1]
+		// Visibility check for the circle bounds
 		if tcx+r < 0 || tcx-r >= w || tcy+r < 0 || tcy-r >= h {
 			continue
 		}

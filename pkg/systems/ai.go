@@ -13,98 +13,59 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-func SystemAI(w *world.World, e core.Entity, lvl *level.Level) {
-	ai := w.AIs[e]
-	if ai == nil || ai.LState == nil {
-		return
+// InitLua initializes the shared Lua state and binds API functions
+func InitLua(w *world.World) {
+	L := w.LState
+
+	// Helper to get ID from first arg
+	getID := func(L *lua.LState) core.Entity {
+		return core.Entity(L.CheckNumber(1))
 	}
-	L := ai.LState
 
-	// Feed the AI the current world state
-	L.SetGlobal("mem_x", lua.LNumber(lvl.Memory.Position.X))
-	L.SetGlobal("mem_y", lua.LNumber(lvl.Memory.Position.Y))
-	L.SetGlobal("mem_radius", lua.LNumber(core.MemoryRadius))
-
-	// Help AI find the nearest gravity well
-	bestDist := 99999.0
-	var bestWell level.GravityWell
-	pos := w.Transforms[e].Position
-	for _, well := range lvl.Wells {
-		// Use wrapped distance logic so AI doesn't get confused by edges
-		dx := well.Position.X - pos.X
-		dy := well.Position.Y - pos.Y
-		if dx > core.ScreenWidth/2 {
-			dx -= core.ScreenWidth
-		}
-		if dx < -core.ScreenWidth/2 {
-			dx += core.ScreenWidth
-		}
-		if dy > core.ScreenHeight/2 {
-			dy -= core.ScreenHeight
-		}
-		if dy < -core.ScreenHeight/2 {
-			dy += core.ScreenHeight
-		}
-
-		d := math.Sqrt(dx*dx + dy*dy)
-		if d < bestDist {
-			bestDist = d
-			bestWell = well
-		}
-	}
-	L.SetGlobal("well_x", lua.LNumber(bestWell.Position.X))
-	L.SetGlobal("well_y", lua.LNumber(bestWell.Position.Y))
-
-	// Let Lua take the wheel
-	if err := L.CallByParam(lua.P{Fn: L.GetGlobal("update_state"), NRet: 0, Protect: true}); err != nil {
-		fmt.Printf("Lua Error (Brain Freeze): %v\n", err)
-	}
-}
-
-// BindLua connects Go functions to Lua scripts
-func BindLua(w *world.World, e core.Entity, targetID core.Entity) {
-	L := lua.NewState()
-	w.AIs[e].LState = L
-
-	// Physics Hooks
+	// Expose physics manipulation to allow scripts to drive entities
 	L.SetGlobal("apply_force", L.NewFunction(func(L *lua.LState) int {
-		w.Physics[e].Acceleration.X += float64(L.CheckNumber(1))
-		w.Physics[e].Acceleration.Y += float64(L.CheckNumber(2))
+		id := getID(L)
+		if phys, ok := w.Physics[id]; ok {
+			phys.Acceleration.X += float64(L.CheckNumber(2))
+			phys.Acceleration.Y += float64(L.CheckNumber(3))
+		}
 		return 0
 	}))
 
 	L.SetGlobal("set_max_speed", L.NewFunction(func(L *lua.LState) int {
-		w.Physics[e].MaxSpeed = float64(L.CheckNumber(1))
+		id := getID(L)
+		if phys, ok := w.Physics[id]; ok {
+			phys.MaxSpeed = float64(L.CheckNumber(2))
+		}
 		return 0
 	}))
 
-	// Sensor Hooks
+	// Expose perception data
 	L.SetGlobal("get_self", L.NewFunction(func(L *lua.LState) int {
-		p := w.Transforms[e].Position
-		v := w.Physics[e].Velocity
-		L.Push(lua.LNumber(p.X))
-		L.Push(lua.LNumber(p.Y))
-		L.Push(lua.LNumber(v.X))
-		L.Push(lua.LNumber(v.Y))
-		return 4
+		id := getID(L)
+		trans := w.Transforms[id]
+		phys := w.Physics[id]
+		if trans != nil && phys != nil {
+			L.Push(lua.LNumber(trans.Position.X))
+			L.Push(lua.LNumber(trans.Position.Y))
+			L.Push(lua.LNumber(phys.Velocity.X))
+			L.Push(lua.LNumber(phys.Velocity.Y))
+			return 4
+		}
+		return 0
 	}))
 
 	L.SetGlobal("get_vec_to", L.NewFunction(func(L *lua.LState) int {
-		tx, ty := float64(L.CheckNumber(1)), float64(L.CheckNumber(2))
-		mx, my := w.Transforms[e].Position.X, w.Transforms[e].Position.Y
-		dx, dy := tx-mx, ty-my
-		if dx > core.ScreenWidth/2 {
-			dx -= core.ScreenWidth
+		id := getID(L)
+		tx, ty := float64(L.CheckNumber(2)), float64(L.CheckNumber(3))
+		
+		trans := w.Transforms[id]
+		if trans == nil {
+			return 0
 		}
-		if dx < -core.ScreenWidth/2 {
-			dx += core.ScreenWidth
-		}
-		if dy > core.ScreenHeight/2 {
-			dy -= core.ScreenHeight
-		}
-		if dy < -core.ScreenHeight/2 {
-			dy += core.ScreenHeight
-		}
+		
+		delta := core.VecToWrapped(trans.Position, core.Vector2{X: tx, Y: ty})
+		dx, dy := delta.X, delta.Y
 
 		d := math.Sqrt(dx*dx + dy*dy)
 		if d < 0.01 {
@@ -117,13 +78,23 @@ func BindLua(w *world.World, e core.Entity, targetID core.Entity) {
 	}))
 
 	L.SetGlobal("get_target", L.NewFunction(func(L *lua.LState) int {
-		p := w.Transforms[targetID].Position
-		L.Push(lua.LNumber(p.X))
-		L.Push(lua.LNumber(p.Y))
-		return 2
+		id := getID(L)
+		ai := w.AIs[id]
+		if ai == nil {
+			return 0
+		}
+		
+		targetID := core.Entity(ai.TargetID)
+		if trans, ok := w.Transforms[targetID]; ok {
+			L.Push(lua.LNumber(trans.Position.X))
+			L.Push(lua.LNumber(trans.Position.Y))
+			return 2
+		}
+		return 0
 	}))
 
 	L.SetGlobal("get_input_dir", L.NewFunction(func(L *lua.LState) int {
+		// Does not need ID, global input
 		dx, dy := 0.0, 0.0
 		if ebiten.IsKeyPressed(ebiten.KeyArrowLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
 			dx = -1
@@ -142,14 +113,81 @@ func BindLua(w *world.World, e core.Entity, targetID core.Entity) {
 		return 2
 	}))
 
-	L.SetGlobal("cast_ray", L.NewFunction(func(L *lua.LState) int {
-		// In the void, raycasts see infinity.
-		dist := float64(L.CheckNumber(2))
-		L.Push(lua.LNumber(dist))
-		return 1
-	}))
+	// Load scripts as modules/tables
+	// We will load them into global tables named after their filename (minus extension)
+	scripts := []string{"runner.lua", "spectre.lua"}
+	for _, script := range scripts {
+		if err := L.DoFile(script); err != nil {
+			log.Printf("Failed to load script %s: %v", script, err)
+		}
+	}
+}
 
-	if err := L.DoFile(w.AIs[e].ScriptPath); err != nil {
-		log.Printf("Lua Script Error: %v", err)
+func SystemAI(w *world.World, lvl *level.Level) {
+	L := w.LState
+
+	for e, ai := range w.AIs {
+		if ai == nil || ai.ScriptName == "" {
+			continue
+		}
+
+		// Pre-calculate nearest gravity well to simplify Lua logic and avoid costly iteration in script
+		bestDist := 99999.0
+		var bestWellPos core.Vector2
+		foundWell := false
+		
+		pos := w.Transforms[e].Position
+		
+		for wellID := range w.GravityWells {
+			wellTrans := w.Transforms[wellID]
+			if wellTrans == nil {
+				continue
+			}
+			
+			// Account for world wrapping so AI perceives the shortest path
+			delta := core.VecToWrapped(pos, wellTrans.Position)
+			dx, dy := delta.X, delta.Y
+
+			d := math.Sqrt(dx*dx + dy*dy)
+			if d < bestDist {
+				bestDist = d
+				bestWellPos = wellTrans.Position
+				foundWell = true
+			}
+		}
+
+		wellX, wellY := 0.0, 0.0
+		if foundWell {
+			wellX, wellY = bestWellPos.X, bestWellPos.Y
+		}
+
+		// Call the script's 'update_state' function
+		tableName := ai.ScriptName
+		// Remove .lua if present (simplistic)
+		if len(tableName) > 4 && tableName[len(tableName)-4:] == ".lua" {
+			tableName = tableName[:len(tableName)-4]
+		}
+		
+		tbl := L.GetGlobal(tableName)
+		if tbl.Type() == lua.LTTable {
+			fn := L.GetField(tbl, "update_state")
+			if fn.Type() == lua.LTFunction {
+				err := L.CallByParam(lua.P{
+					Fn: fn,
+					NRet: 0,
+					Protect: true,
+				}, 
+				lua.LNumber(e), // id
+				lua.LNumber(lvl.Memory.Position.X), // mem_x
+				lua.LNumber(lvl.Memory.Position.Y), // mem_y
+				lua.LNumber(core.MemoryRadius),     // mem_radius
+				lua.LNumber(wellX),                 // well_x
+				lua.LNumber(wellY),                 // well_y
+				)
+				if err != nil {
+					fmt.Printf("Lua Error on %s: %v\n", ai.ScriptName, err)
+				}
+			}
+		}
 	}
 }
