@@ -1,40 +1,49 @@
 package systems
 
 import (
+	"image/color"
 	"math"
+	"math/rand"
 
+	"beautifulmess/pkg/core"
 	"beautifulmess/pkg/world"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
 func SystemInput(w *world.World) {
-
 	for e := range w.InputControlleds {
-
 		phys := w.Physics[e]
-
 		if phys == nil {
-
 			continue
-
 		}
-
-
 
 		// Boost acceleration for dash mechanic
-
 		accel := 1.5
-
 		if ebiten.IsKeyPressed(ebiten.KeyShift) {
-
 			accel = 3.5
-
+			w.Audio.Play("boost")
+			
+			// Emit thruster particles
+			if trans := w.Transforms[e]; trans != nil {
+				// Reverse velocity vector for exhaust
+				exhaustX := -phys.Velocity.X * 0.5
+				exhaustY := -phys.Velocity.Y * 0.5
+				// Jitter
+				exhaustX += (rand.Float64() - 0.5) * 2
+				exhaustY += (rand.Float64() - 0.5) * 2
+				
+				w.Particles.Emit(
+					trans.Position,
+					core.Vector2{X: exhaustX, Y: exhaustY},
+					color.RGBA{0, 255, 255, 255},
+					0.05,
+				)
+			}
 		}
 
-
-
 		if ebiten.IsKeyPressed(ebiten.KeyArrowLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
+
 
 			phys.Acceleration.X -= accel
 

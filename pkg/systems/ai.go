@@ -113,6 +113,13 @@ func InitLua(w *world.World) {
 		return 2
 	}))
 
+	L.SetGlobal("play_sound", L.NewFunction(func(L *lua.LState) int {
+		name := L.CheckString(1)
+		// Basic rate limiting could go here if needed, but for now we trust the script
+		w.Audio.Play(name)
+		return 0
+	}))
+
 	// Load scripts as modules/tables
 	// We will load them into global tables named after their filename (minus extension)
 	scripts := []string{"runner.lua", "spectre.lua"}

@@ -68,6 +68,7 @@ type Game struct {
 	CurrentLevel int
 	IsPaused     bool
 	Popup        *level.MemoryNode
+	PopupTime    time.Time
 
 	// Graphics Assets
 	FrostMask     *image.RGBA
@@ -225,6 +226,9 @@ func (g *Game) Update() error {
 	systems.SystemAI(g.World, lvl)
 	systems.SystemPhysics(g.World)
 	systems.SystemEntropy(g.World, g.FrostMask)
+	
+	// Update Particles (Visuals only, no game logic impact)
+	g.World.Particles.Update()
 
 	// Check win condition: Spectre trapped near memory node while runner is present
 	pSpec := g.World.Transforms[g.SpectreID].Position
@@ -236,6 +240,8 @@ func (g *Game) Update() error {
 	if dSpecMem < core.MemoryRadius && dRunSpec < 80 {
 		g.IsPaused = true
 		g.Popup = &lvl.Memory
+		g.PopupTime = time.Now()
+		g.World.Audio.Play("chime")
 	}
 	return nil
 }
@@ -247,6 +253,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op := &ebiten.DrawRectShaderOptions{}
 	op.Uniforms = map[string]interface{}{"Cursor": []float32{0, 0, t}}
 	screen.DrawRectShader(w, h, g.NebulaShader, op)
+
+	// Draw Particles (Background layer for depth)
+	g.World.Particles.Draw(screen)
 
 	// Draw Gravity Wells (Black Holes)
 	lvl := &g.Levels[g.CurrentLevel]
@@ -261,10 +270,26 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Draw Entities
 	systems.DrawEntities(screen, g.World)
 
-	// Draw UI Modal
+	// 5. Draw UI Modal
 	if g.IsPaused && g.Popup != nil {
+		// Animation: Pop in
+		dt := float64(time.Since(g.PopupTime).Seconds())
+		scale := dt * 5.0
+		if scale > 1.0 {
+			scale = 1.0
+		}
+		// Elastic bounce
+		scale = scale * (1.0 + 0.3*(1.0-scale))
+
 		bx, by := 300.0, 200.0
 		bw, bh := 680.0, 320.0
+		
+		// Apply scale from center
+		cx, cy := bx+bw/2, by+bh/2
+		bw *= scale
+		bh *= scale
+		bx = cx - bw/2
+		by = cy - bh/2
 
 		// Modal Background
 		vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 240}, false)
@@ -272,22 +297,24 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		// Border
 		vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
 
-		// Photo Placeholder (Static Noise)
-		photoW, photoH := 300.0, 200.0
-		px, py := bx+(bw-photoW)/2, by+40
-		for i := 0; i < 100; i++ {
-			rx := rand.Float64() * photoW
-			ry := rand.Float64() * photoH
-			rw := rand.Float64() * 20
-			c := uint8(rand.Intn(255))
-			vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rw), 2, color.RGBA{c, c, c, 255}, false)
-		}
-		vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
+		if scale > 0.9 {
+			// Photo Placeholder (Static Noise)
+			photoW, photoH := 300.0, 200.0
+			px, py := bx+(bw-photoW)/2, by+40
+			for i := 0; i < 100; i++ {
+				rx := rand.Float64() * photoW
+				ry := rand.Float64() * photoH
+				rw := rand.Float64() * 20
+				c := uint8(rand.Intn(255))
+				vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rw), 2, color.RGBA{c, c, c, 255}, false)
+			}
+			vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
 
-		// Text
-		ebitenutil.DebugPrintAt(screen, "[ MEMORY CORRUPTED ]", int(px)+20, int(py)+int(photoH)/2)
-		ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+260)
-		ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+290)
+			// Text
+			ebitenutil.DebugPrintAt(screen, "[ MEMORY CORRUPTED ]", int(px)+20, int(py)+int(photoH)/2)
+			ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+260)
+			ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+290)
+		}
 	}
 }
 

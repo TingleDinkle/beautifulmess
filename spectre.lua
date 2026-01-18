@@ -23,16 +23,25 @@ function spectre.update_state(id, mem_x, mem_y, mem_radius, well_x, well_y)
     -- get_vec_to returns the shortest path across the screen wrap
     local to_opp_x, to_opp_y, dist = get_vec_to(id, opp_x, opp_y)
     
+    
     state_timer = state_timer - 1
     if current_state ~= STATE_SPRINT then stamina = stamina + 0.5 end
     if stamina > max_stamina then stamina = max_stamina end
+
+    -- Ambient Hum (Dissonant presence)
+    if math.random() < 0.005 then
+        play_sound("spectre_hum")
+    end
     
+    -- Logic: Fleeing
     if dist < 150 and current_state == STATE_CRUISE then
         if stamina > 30 then
             if math.random() < 0.4 then
                 current_state = STATE_JINK; state_timer = 20; jink_dir = (math.random()<0.5) and 1 or -1
+                play_sound("spectre_dash")
             else
                 current_state = STATE_SPRINT; state_timer = 60
+                play_sound("spectre_dash")
             end
         else
             current_state = STATE_RECOVER; state_timer = 40

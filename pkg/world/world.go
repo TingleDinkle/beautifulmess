@@ -1,8 +1,10 @@
 package world
 
 import (
+	"beautifulmess/pkg/audio"
 	"beautifulmess/pkg/components"
 	"beautifulmess/pkg/core"
+	"beautifulmess/pkg/particles"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -15,6 +17,10 @@ type World struct {
 	Tags       map[core.Entity]*components.Tag
 	GravityWells map[core.Entity]*components.GravityWell
 	InputControlleds map[core.Entity]*components.InputControlled
+	
+	Particles *particles.ParticleSystem
+	Audio     *audio.AudioSystem
+	
 	LState     *lua.LState
 	nextID     core.Entity
 }
@@ -28,6 +34,8 @@ func NewWorld() *World {
 		Tags:       make(map[core.Entity]*components.Tag),
 		GravityWells: make(map[core.Entity]*components.GravityWell),
 		InputControlleds: make(map[core.Entity]*components.InputControlled),
+		Particles: particles.NewParticleSystem(),
+		Audio:     audio.NewAudioSystem(),
 		LState:     lua.NewState(),
 	}
 }
