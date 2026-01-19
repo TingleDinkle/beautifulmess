@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -45,9 +46,8 @@ func (as *AudioSystem) LoadFile(name, path string) {
 	}
 
 	// Read all bytes
-	size := d.Length()
-	b := make([]byte, size)
-	if _, err := d.Read(b); err != nil {
+	b, err := io.ReadAll(d)
+	if err != nil {
 		log.Printf("Failed to read wav bytes %s: %v", path, err)
 		return
 	}

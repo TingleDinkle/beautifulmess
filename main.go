@@ -13,8 +13,6 @@ import (
 	"beautifulmess/pkg/level"
 	"beautifulmess/pkg/systems"
 	"beautifulmess/pkg/world"
-	
-	_ "golang.org/x/image/bmp" // Register BMP format
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -105,12 +103,8 @@ func NewGame() *Game {
 	}
 
 	// Load Assets
-	var errImg error
-	g.SpriteRunner, _, errImg = ebitenutil.NewImageFromFile("assets/ship.bmp")
-	if errImg != nil {
-		log.Fatal(errImg)
-	}
-
+	g.SpriteRunner = generateAstroSprite()
+	
 	g.World.Audio.LoadFile("shoot", "assets/shoot.wav")
 	g.World.Audio.LoadFile("boom", "assets/boom.wav")
 
@@ -169,7 +163,7 @@ func (g *Game) LoadLevel(idx int) {
 		Sprite: g.SpriteRunner, 
 		Color: color.RGBA{0, 255, 255, 255}, 
 		Glow: true,
-		Scale: 4.0,
+		Scale: 1.0, // Scale 1.0 because we are now generating a 16x16 vector sprite, not a tiny 8x8 BMP
 	}
 	w.AIs[g.RunnerID] = &components.AI{ScriptName: "runner.lua"}
 	w.InputControlleds[g.RunnerID] = &components.InputControlled{}
@@ -236,6 +230,42 @@ func generateGothicSprite() *ebiten.Image {
 	img.Set(6, 6, color.White)
 	img.Set(9, 6, color.White)
 	return ebiten.NewImageFromImage(img)
+}
+
+func generateAstroSprite() *ebiten.Image {
+	img := ebiten.NewImage(16, 16)
+	
+	// Draw a white triangle pointing right
+	// Tip at (16, 8)
+	// Back at x=0
+	
+	// Manual rasterization for robustness
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			// Triangle logic
+			// (0,0) -> (16,8)  => y = 0.5x
+			// (0,16) -> (16,8) => y = -0.5x + 16
+			
+			fx, fy := float64(x), float64(y)
+			
+			inOuter := (fy >= 0.5*fx) && (fy <= -0.5*fx+16.0)
+			
+			// Cutout logic
+			// (0,0) -> (4,8)   => y = 2x
+			// (0,16) -> (4,8)  => y = -2x + 16
+			inCutout := (fx < 4) && (fy >= 2.0*fx) && (fy <= -2.0*fx+16.0)
+			
+			if inOuter && !inCutout {
+				img.Set(x, y, color.White)
+			}
+		}
+	}
+	
+	// Add a simple 1px black border for "retro" feel?
+	// The background is dark, so a black border might be invisible unless over particles.
+	// But let's keep it simple: just the white shape.
+	
+	return img
 }
 
 func generateCyberSprite() *ebiten.Image {

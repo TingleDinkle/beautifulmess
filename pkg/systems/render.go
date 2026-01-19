@@ -64,7 +64,7 @@ func DrawEntities(screen *ebiten.Image, w *world.World) {
 			scale = 1.0
 		}
 
-		DrawWrappedSprite(screen, r.Sprite, trans.Position, trans.Rotation, scale)
+		DrawWrappedSprite(screen, r.Sprite, trans.Position, trans.Rotation, scale, r.Color)
 
 	}
 
@@ -112,7 +112,7 @@ func DrawWrappedCircle(screen *ebiten.Image, pos core.Vector2, r float64, c colo
 
 
 
-func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2, rot float64, scale float64) {
+func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2, rot float64, scale float64, clr color.RGBA) {
 
 	w, h := img.Size()
 
@@ -151,6 +151,8 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 			op.GeoM.Rotate(rot)
 
 			op.GeoM.Translate(x, y)
+			
+			op.ColorScale.ScaleWithColor(clr)
 
 			screen.DrawImage(img, op)
 
