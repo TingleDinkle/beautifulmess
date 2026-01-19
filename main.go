@@ -74,6 +74,12 @@ type Game struct {
 	PopupTime    time.Time
 	PopupPhotoIndex int
 
+	// Level Transition state
+	IsTransitioning bool
+	TransitionTime  float64 // Current progress (0.0 to 1.0)
+	TargetLevel     int
+	ReunionPoint    core.Vector2
+
 	// Graphics Assets
 	FrostMask     *image.RGBA
 	FrostImg      *ebiten.Image
@@ -364,11 +370,27 @@ func generateAstroSprite() *ebiten.Image {
 func (g *Game) Update() error {
 	g.handleInput()
 
+	if g.IsTransitioning {
+		return g.updateTransition()
+	}
+
 	if g.IsPaused {
 		return g.updatePaused()
 	}
 
 	return g.updateActive()
+}
+
+func (g *Game) updateTransition() error {
+	// A deliberate transition speed allows the visual bloom to reach its emotional peak before the scene reset
+	g.TransitionTime += 1.0 / 120.0 
+	
+	if g.TransitionTime >= 1.0 {
+		g.IsTransitioning = false
+		g.LoadLevel(g.TargetLevel)
+		g.TransitionTime = 0
+	}
+	return nil
 }
 
 func (g *Game) handleInput() {
@@ -391,9 +413,12 @@ func (g *Game) updatePaused() error {
 			g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos)
 		}
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+			// Closing the popup initiates the 'Reunion' transition phase
 			g.IsPaused = false
 			g.Popup = nil
-			g.LoadLevel(g.CurrentLevel + 1)
+			g.IsTransitioning = true
+			g.TransitionTime = 0
+			g.TargetLevel = g.CurrentLevel + 1
 		}
 	}
 	return nil
@@ -439,6 +464,7 @@ func (g *Game) checkWinCondition(lvl *level.Level) error {
 				g.Popup = &lvl.Memory
 				g.PopupTime = time.Now()
 				g.PopupPhotoIndex = 0
+				g.ReunionPoint = pSpec.Position // Persistent tracking anchors the bloom effect to the narrative climax
 				g.World.Audio.Play("chime")
 				return nil
 			}
@@ -458,8 +484,63 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	g.drawWorld(screen, shake)
+	
+	if g.IsTransitioning {
+		g.drawTransition(screen)
+	}
+	
 	g.drawUI(screen)
 }
+
+func (g *Game) drawTransition(screen *ebiten.Image) {
+	// A procedural bloom effect translates the narrative theme of growth and union into a physical visual event
+	t := g.TransitionTime
+	
+	// 1. Reunion Bloom: A specialized floral burst at the point of character convergence
+	g.drawBloom(screen, g.ReunionPoint, 400.0*t, color.RGBA{255, 200, 255, uint8(255 * (1.0 - t))})
+
+	// 2. Gravity Well Bloom: Every singularity becomes a source of radiating light
+	for id, well := range g.World.GravityWells {
+		if well == nil { continue }
+		trans, ok := g.World.Transforms[id]
+		if !ok { continue }
+		
+		g.drawBloom(screen, trans.Position, 300.0*t, color.RGBA{255, 255, 200, uint8(200 * (1.0 - t))})
+		
+		// Central core flare emphasizes the transformation of the trap into a beacon
+		coreAlpha := uint8(200 * t)
+		vector.DrawFilledCircle(screen, float32(trans.Position.X), float32(trans.Position.Y), float32(well.Radius * (1.0 + t*2)), color.RGBA{255, 255, 255, coreAlpha}, true)
+	}
+
+	// 3. Sunshine Pixelizing: A grid-based transition enforces the digital/arcade aesthetic
+	const cellSize = 40
+	for y := 0; y < core.ScreenHeight; y += cellSize {
+		for x := 0; x < core.ScreenWidth; x += cellSize {
+			// Offset based on time and position creates a 'sweeping' sunshine effect
+			prog := t*2.0 - (float64(x)/core.ScreenWidth)*0.5 - (float64(y)/core.ScreenHeight)*0.5
+			if prog < 0 { prog = 0 }
+			if prog > 1 { prog = 1 }
+			
+			size := float32(cellSize) * float32(prog)
+			if size > 0 {
+				vector.DrawFilledRect(screen, float32(x), float32(y), size, size, color.RGBA{255, 255, 200, uint8(255*prog)}, false)
+			}
+		}
+	}
+}
+
+func (g *Game) drawBloom(screen *ebiten.Image, center core.Vector2, radius float64, clr color.RGBA) {
+	// Circular 'petal' distribution mimics organic flowering patterns
+	numPetals := 12
+	for i := 0; i < numPetals; i++ {
+		angle := (float64(i) / float64(numPetals)) * 2 * math.Pi
+		px := center.X + math.Cos(angle)*radius
+		py := center.Y + math.Sin(angle)*radius
+		vector.DrawFilledCircle(screen, float32(px), float32(py), float32(radius*0.2), clr, true)
+	}
+}
+
+
 
 func (g *Game) drawWorld(screen *ebiten.Image, shake core.Vector2) {
 	// Render order establishes visual depth: Background -> Particles -> World -> Mist -> Entities
