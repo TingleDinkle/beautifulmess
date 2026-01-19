@@ -52,18 +52,21 @@ func DrawEntities(screen *ebiten.Image, w *world.World, shake core.Vector2) {
 }
 
 func DrawWrappedCircle(screen *ebiten.Image, pos core.Vector2, r float64, c color.RGBA, fill bool) {
-	// Rendering multiple instances per entity preserves visual continuity across toroidal seams
+	// Pre-calculating constants outside the loop minimizes redundant type-conversion overhead in the hot rendering path
+	const sw, sh = float32(core.ScreenWidth), float32(core.ScreenHeight)
+	rad := float32(r)
+
 	for ox := -1.0; ox <= 1.0; ox++ {
 		for oy := -1.0; oy <= 1.0; oy++ {
-			x := float32(pos.X + ox*core.ScreenWidth)
-			y := float32(pos.Y + oy*core.ScreenHeight)
+			x := float32(pos.X) + float32(ox)*sw
+			y := float32(pos.Y) + float32(oy)*sh
 
-			if !isVisible(x, y, float32(r*2), float32(r*2)) { continue }
+			if !isVisible(x, y, rad*2, rad*2) { continue }
 
 			if fill {
-				vector.DrawFilledCircle(screen, x, y, float32(r), c, true)
+				vector.DrawFilledCircle(screen, x, y, rad, c, true)
 			} else {
-				vector.StrokeCircle(screen, x, y, float32(r), 2, c, true)
+				vector.StrokeCircle(screen, x, y, rad, 2, c, true)
 			}
 		}
 	}
@@ -73,35 +76,38 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 	w, h := img.Size()
 	halfW, halfH := float64(w)/2, float64(h)/2
 	
-	sw, sh := float32(float64(w)*scale), float32(float64(h)*scale)
+	const sw, sh = float32(core.ScreenWidth), float32(core.ScreenHeight)
+	sizeW, sizeH := float32(float64(w)*scale), float32(float64(h)*scale)
 
-	// Reusing DrawImageOptions across neighbor instances prevents redundant heap allocations per frame
+	// Pre-configuring DrawOptions outside the wrap-loop minimizes heap allocations per frame
 	op := &ebiten.DrawImageOptions{}
 	op.Filter = ebiten.FilterNearest 
 	op.ColorScale.ScaleWithColor(clr)
 
 	for ox := -1.0; ox <= 1.0; ox++ {
 		for oy := -1.0; oy <= 1.0; oy++ {
-			x, y := pos.X+ox*core.ScreenWidth, pos.Y+oy*core.ScreenHeight
+			x := float32(pos.X) + float32(ox)*sw
+			y := float32(pos.Y) + float32(oy)*sh
 
-			if !isVisible(float32(x), float32(y), sw, sh) { continue }
+			if !isVisible(x, y, sizeW, sizeH) { continue }
 
 			op.GeoM.Reset()
 			op.GeoM.Translate(-halfW, -halfH)
 			op.GeoM.Scale(scale, scale)
 			op.GeoM.Rotate(rot)
-			op.GeoM.Translate(x, y)
+			op.GeoM.Translate(float64(x), float64(y))
 			
 			screen.DrawImage(img, op)
 		}
 	}
 }
 
-
 func isVisible(x, y, w, h float32) bool {
-	// Conservative bounds checking prevents off-screen draw calls from reaching the GPU
-	return x+w/2 >= 0 && x-w/2 <= core.ScreenWidth && y+h/2 >= 0 && y-h/2 <= core.ScreenHeight
+	// Tight bounds checking eliminates wasted draw calls for entities outside the immediate viewport
+	const sw, sh = float32(core.ScreenWidth), float32(core.ScreenHeight)
+	return x+w/2 >= 0 && x-w/2 <= sw && y+h/2 >= 0 && y-h/2 <= sh
 }
+
 
 
 

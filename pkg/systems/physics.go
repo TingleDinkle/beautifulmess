@@ -7,6 +7,7 @@ import (
 
 	"beautifulmess/pkg/components"
 	"beautifulmess/pkg/core"
+	"beautifulmess/pkg/particles"
 	"beautifulmess/pkg/world"
 )
 
@@ -81,8 +82,6 @@ func handleCollisions(id core.Entity, w *world.World) {
 	
 	tag, hasTag := w.Tags[id]
 
-	// Proximity checks against static geometry maintain high framerates in dense levels
-	const wallSize = 10.0
 	for wallID, wall := range w.Walls {
 		if wall == nil || wall.IsDestroyed { continue }
 		wallTrans, ok := w.Transforms[wallID]
@@ -92,85 +91,98 @@ func handleCollisions(id core.Entity, w *world.World) {
 		delta := core.VecToWrapped(trans.Position, wallTrans.Position)
 		dx, dy := math.Abs(delta.X), math.Abs(delta.Y)
 
-		        		// AABB collision detection with inelastic response simulates structural impact
-		        		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
-		        			if hasTag && tag.Name == "bullet" {
-		        				if wall.Destructible {
-		        					// Triggering a shatter event provides a visceral sense of structural failure
-		        					shatterEntity(w, wallID)
-		        					w.Audio.Play("boom") 
-		        					w.ScreenShake += 4.0
-		        					
-		        					// Removing the entity from the simulation prevents redundant collision processing
-		        					w.DestroyEntity(wallID)
-		        				} else {
-		        					// Physical feedback on static geometry prevents the world from feeling 'unresponsive'
-		        					emitImpactFeedback(w, trans.Position)
-		        				}
-		        				w.DestroyEntity(id)
-		        				return
-		        			}
-		        
-		        			// Inelastic collision response prevents entities from passing through solid data structures
-		        			phys.Velocity.X, phys.Velocity.Y = 0, 0
-		        		}
-		        	}
-		        
-		        	// Dynamic entity interaction logic
-		        	if hasTag && tag.Name == "bullet" {
-		        		for specID, specTag := range w.Tags {
-		        			if specTag.Name != "spectre" { continue }
-		        			
-		        			if specTrans, okST := w.Transforms[specID]; okST {
-		        				if specPhys, okSP := w.Physics[specID]; okSP {
-		        					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-		        						// Absorbing high-velocity projectiles significantly increases local mass-susceptibility
-		        						specPhys.GravityMultiplier += 1.0
-		        						w.Audio.Play("boom")
-		        						w.ScreenShake += 8.0
-		        						
-		        						// Spectre shattering (visual only) reinforces the impact weight
-		        						shatterEntity(w, specID)
-		        						
-		        						w.DestroyEntity(id)
-		        						return
-		        					}
-		        				}
-		        			}
-		        		}
-		        	}
-		        }
-		        
-		        func shatterEntity(w *world.World, id core.Entity) {
-		        	// A multi-layered pixel-burst simulates the violent deconstruction of data objects
-		        	trans, okT := w.Transforms[id]
-		        	render, okR := w.Renders[id]
-		        	if !okT || !okR { return }
-		        
-		        	// Primary debris cloud
-		        	spawnDebris(w, trans.Position, render.Color, 20, 5.0)
-		        	
-		        	// Secondary 'glow' shards emphasize the energetic nature of the destruction
-		        	glowColor := color.RGBA{255, 255, 200, 255}
-		        	spawnDebris(w, trans.Position, glowColor, 8, 8.0)
-		        }
-		        
-		        func emitImpactFeedback(w *world.World, pos core.Vector2) {
-		        	// Subtle particle emission on indestructible surfaces conveys physical hardness
-		        	spawnDebris(w, pos, color.RGBA{200, 200, 255, 255}, 5, 2.0)
-		        }
-		        
-		        func spawnDebris(w *world.World, pos core.Vector2, col color.RGBA, count int, maxSpeed float64) {
-		        	for i := 0; i < count; i++ {
-		        		angle := rand.Float64() * 2 * math.Pi
-		        		speed := rand.Float64() * maxSpeed
-		        		
-		        		w.Particles.Emit(
-		        			pos,
-		        			core.Vector2{X: math.Cos(angle) * speed, Y: math.Sin(angle) * speed},
-		        			col,
-		        			0.01 + rand.Float64()*0.04, // Varied decay rates create a lingering debris field
-		        		)
-		        	}
-		        }
-		        
+		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
+			if hasTag && tag.Name == "bullet" {
+				// Universal ricochets allow bullets to persist in the play area, accelerating the pace of destruction
+				if dx > dy {
+					phys.Velocity.X *= -1.0
+					// Positional correction prevents the high-velocity projectile from being trapped inside geometry
+					if delta.X > 0 { trans.Position.X = wallTrans.Position.X - (5.1 + wall.Size/2) } else { trans.Position.X = wallTrans.Position.X + (5.1 + wall.Size/2) }
+				} else {
+					phys.Velocity.Y *= -1.0
+					if delta.Y > 0 { trans.Position.Y = wallTrans.Position.Y - (5.1 + wall.Size/2) } else { trans.Position.Y = wallTrans.Position.Y + (5.1 + wall.Size/2) }
+				}
+
+				if wall.Destructible {
+					// Surviving the impact allows a single high-energy bullet to trigger multiple shatter events
+					shatterEntity(w, wallID, phys.Velocity)
+					w.Audio.Play("boom") 
+					w.ScreenShake += 4.0
+					w.DestroyEntity(wallID)
+				} else {
+					emitImpactFeedback(w, trans.Position)
+					w.ScreenShake += 1.0
+				}
+				return
+			}
+
+			// Inelastic collision response prevents physical bodies from passing through solid data structures
+			phys.Velocity.X, phys.Velocity.Y = 0, 0
+		}
+	}
+
+	// Dynamic entity interaction logic
+	if hasTag && tag.Name == "bullet" {
+		for specID, specTag := range w.Tags {
+			if specTag.Name != "spectre" { continue }
+			
+			if specTrans, okST := w.Transforms[specID]; okST {
+				if specPhys, okSP := w.Physics[specID]; okSP {
+					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+						specPhys.GravityMultiplier += 1.0
+						w.Audio.Play("boom")
+						w.ScreenShake += 8.0
+						
+						// Narrative impact is reinforced by violent red pixel displacement
+						shatterEntity(w, specID, phys.Velocity)
+						
+						w.DestroyEntity(id)
+						return
+					}
+				}
+			}
+		}
+	}
+}
+
+func shatterEntity(w *world.World, id core.Entity, impactVel core.Vector2) {
+	// Specialized particle quirks provide a high-fidelity 'Nintendo-grade' destruction feel
+	trans, okT := w.Transforms[id]
+	render, okR := w.Renders[id]
+	if !okT || !okR { return }
+
+	// Core explosion with inherited momentum
+	biasVel := core.Vector2{X: impactVel.X * 0.2, Y: impactVel.Y * 0.2}
+	spawnDebrisQuirky(w, trans.Position, render.Color, 15, 4.0, biasVel, particles.QuirkStandard)
+	
+	// 'Orphaned' data fragments that orbit the blast center create visual complexity
+	spawnDebrisQuirky(w, trans.Position, color.RGBA{255, 255, 200, 255}, 6, 6.0, biasVel, particles.QuirkOrbit)
+	
+	// Flickering sparks simulate energetic discharge
+	spawnDebrisQuirky(w, trans.Position, render.Color, 10, 3.0, biasVel, particles.QuirkFlicker)
+}
+
+func emitImpactFeedback(w *world.World, pos core.Vector2) {
+	// High-frequency flickering sparks convey the hardness of indestructible surfaces
+	spawnDebrisQuirky(w, pos, color.RGBA{200, 200, 255, 255}, 5, 2.0, core.Vector2{}, particles.QuirkFlicker)
+}
+
+func spawnDebrisQuirky(w *world.World, pos core.Vector2, col color.RGBA, count int, maxSpeed float64, bias core.Vector2, quirk particles.ParticleQuirk) {
+	for i := 0; i < count; i++ {
+		angle := rand.Float64() * 2 * math.Pi
+		speed := rand.Float64() * maxSpeed
+		
+		vel := core.Vector2{
+			X: math.Cos(angle)*speed + bias.X,
+			Y: math.Sin(angle)*speed + bias.Y,
+		}
+		
+		w.Particles.EmitAdvanced(
+			pos,
+			vel,
+			col,
+			0.01 + rand.Float64()*0.04,
+			quirk,
+		)
+	}
+}		        

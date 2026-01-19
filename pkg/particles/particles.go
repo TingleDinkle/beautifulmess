@@ -2,6 +2,7 @@ package particles
 
 import (
 	"image/color"
+	"math"
 	"math/rand"
 
 	"beautifulmess/pkg/core"
@@ -10,55 +11,98 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
+type ParticleQuirk int
+
+const (
+	QuirkStandard ParticleQuirk = iota
+	QuirkOrbit                  // Particles that spiral around their center point
+	QuirkFlicker                // Particles that change size/alpha rapidly
+)
+
 type Particle struct {
 	Position core.Vector2
 	Velocity core.Vector2
-	Life     float64 // 0.0 to 1.0
+	Life     float64 
 	Decay    float64
 	Color    color.RGBA
 	Size     float64
+	Quirk    ParticleQuirk
+	Angle    float64 // Used for orbital or rotational quirks
 }
 
 type ParticleSystem struct {
 	particles []*Particle
+	pool      []*Particle // A managed pool prevents allocation-heavy GC spikes during massive shatters
 }
 
 func NewParticleSystem() *ParticleSystem {
 	return &ParticleSystem{
-		particles: make([]*Particle, 0, 1000),
+		particles: make([]*Particle, 0, 2000),
+		pool:      make([]*Particle, 0, 2000),
 	}
 }
 
 func (ps *ParticleSystem) Reset() {
+	// Returning active particles to the pool maintains zero-alloc level transitions
+	for _, p := range ps.particles {
+		ps.pool = append(ps.pool, p)
+	}
 	ps.particles = ps.particles[:0]
 }
 
 func (ps *ParticleSystem) Emit(pos core.Vector2, vel core.Vector2, col color.RGBA, decay float64) {
-	ps.particles = append(ps.particles, &Particle{
-		Position: pos,
-		Velocity: vel,
-		Life:     1.0,
-		Decay:    decay,
-		Color:    col,
-		Size:     rand.Float64()*2 + 1,
-	})
+	ps.EmitAdvanced(pos, vel, col, decay, QuirkStandard)
+}
+
+func (ps *ParticleSystem) EmitAdvanced(pos core.Vector2, vel core.Vector2, col color.RGBA, decay float64, quirk ParticleQuirk) {
+	var p *Particle
+	if len(ps.pool) > 0 {
+		p = ps.pool[len(ps.pool)-1]
+		ps.pool = ps.pool[:len(ps.pool)-1]
+	} else {
+		p = &Particle{}
+	}
+
+	p.Position = pos
+	p.Velocity = vel
+	p.Life = 1.0
+	p.Decay = decay
+	p.Color = col
+	p.Size = rand.Float64()*2 + 1
+	p.Quirk = quirk
+	p.Angle = rand.Float64() * math.Pi * 2
+
+	ps.particles = append(ps.particles, p)
 }
 
 func (ps *ParticleSystem) Update() {
-	// Filter in place
 	n := 0
 	for _, p := range ps.particles {
 		p.Life -= p.Decay
 		if p.Life > 0 {
-			p.Position.X += p.Velocity.X
-			p.Position.Y += p.Velocity.Y
+			// Quirky movement patterns provide an organic, 'hand-crafted' feel to the digital debris
+			switch p.Quirk {
+			case QuirkOrbit:
+				p.Angle += 0.2
+				p.Position.X += p.Velocity.X + math.Cos(p.Angle)*2.0
+				p.Position.Y += p.Velocity.Y + math.Sin(p.Angle)*2.0
+			case QuirkFlicker:
+				if rand.Float64() < 0.3 { p.Size = rand.Float64() * 4.0 }
+				fallthrough
+			default:
+				p.Position.X += p.Velocity.X
+				p.Position.Y += p.Velocity.Y
+			}
 			
-			// Optional: Drag
-			p.Velocity.X *= 0.95
-			p.Velocity.Y *= 0.95
+			// Aerodynamic drag prevents particles from drifting infinitely
+			p.Velocity.X *= 0.96
+			p.Velocity.Y *= 0.96
 			
 			ps.particles[n] = p
 			n++
+		} else {
+			// Recycling dead particles eliminates the need for fresh heap allocations
+			ps.pool = append(ps.pool, p)
 		}
 	}
 	ps.particles = ps.particles[:n]
