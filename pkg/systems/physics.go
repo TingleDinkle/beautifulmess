@@ -15,31 +15,36 @@ func SystemPhysics(w *world.World) {
 		}
 
 		// Calculate gravitational pull from all wells
-		for wellID, well := range w.GravityWells {
-			wellTrans := w.Transforms[wellID]
-			if wellTrans == nil {
-				continue
+		// Bullets are immune to gravity
+		if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
+			// Skip gravity for bullets
+		} else {
+			for wellID, well := range w.GravityWells {
+				wellTrans := w.Transforms[wellID]
+				if wellTrans == nil {
+					continue
+				}
+
+				delta := core.VecToWrapped(trans.Position, wellTrans.Position)
+				dx, dy := delta.X, delta.Y
+
+				d := math.Sqrt(dx*dx + dy*dy)
+				if d < 10 {
+					d = 10
+				}
+
+				force := (well.Mass * 500) / (d * d)
+				if force > 2.0 {
+					force = 2.0
+				}
+
+				if phys.GravityMultiplier > 0 {
+					force *= phys.GravityMultiplier
+				}
+
+				phys.Acceleration.X += (dx / d) * force
+				phys.Acceleration.Y += (dy / d) * force
 			}
-
-			delta := core.VecToWrapped(trans.Position, wellTrans.Position)
-			dx, dy := delta.X, delta.Y
-
-			d := math.Sqrt(dx*dx + dy*dy)
-			if d < 10 {
-				d = 10
-			}
-
-			force := (well.Mass * 500) / (d * d)
-			if force > 2.0 {
-				force = 2.0
-			}
-
-			if phys.GravityMultiplier > 0 {
-				force *= phys.GravityMultiplier
-			}
-
-			phys.Acceleration.X += (dx / d) * force
-			phys.Acceleration.Y += (dy / d) * force
 		}
 
 		phys.Velocity.X += phys.Acceleration.X

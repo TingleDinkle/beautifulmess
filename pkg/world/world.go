@@ -19,6 +19,7 @@ type World struct {
 	InputControlleds map[core.Entity]*components.InputControlled
 	Walls            map[core.Entity]*components.Wall
 	ProjectileEmitters map[core.Entity]*components.ProjectileEmitter
+	Lifetimes        map[core.Entity]*components.Lifetime
 	
 	Particles *particles.ParticleSystem
 	Audio     *audio.AudioSystem
@@ -38,6 +39,7 @@ func NewWorld() *World {
 		InputControlleds: make(map[core.Entity]*components.InputControlled),
 		Walls:            make(map[core.Entity]*components.Wall),
 		ProjectileEmitters: make(map[core.Entity]*components.ProjectileEmitter),
+		Lifetimes:        make(map[core.Entity]*components.Lifetime),
 		Particles: particles.NewParticleSystem(),
 		Audio:     audio.NewAudioSystem(),
 		LState:     lua.NewState(),

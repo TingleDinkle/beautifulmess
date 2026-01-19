@@ -134,6 +134,7 @@ func (g *Game) LoadLevel(idx int) {
 	w.InputControlleds = make(map[core.Entity]*components.InputControlled)
 	w.Walls = make(map[core.Entity]*components.Wall)
 	w.ProjectileEmitters = make(map[core.Entity]*components.ProjectileEmitter)
+	w.Lifetimes = make(map[core.Entity]*components.Lifetime)
 
 	// Spawn Gravity Wells
 	for _, well := range lvl.Wells {
@@ -306,6 +307,7 @@ func (g *Game) Update() error {
 	systems.SystemPhysics(g.World)
 	systems.SystemEntropy(g.World, g.FrostMask)
 	systems.SystemProjectileEmitter(g.World)
+	systems.SystemLifetime(g.World)
 	
 	// Update Particles (Visuals only, no game logic impact)
 	g.World.Particles.Update()

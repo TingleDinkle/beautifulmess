@@ -55,6 +55,8 @@ func SystemProjectileEmitter(w *world.World) {
 				Scale:  0.5,
 			}
 			
+			w.Lifetimes[bulletID] = &components.Lifetime{TimeRemaining: 2.0}
+			
 			// Add Tag to identify it
 			w.Tags[bulletID] = &components.Tag{Name: "bullet"}
 		}

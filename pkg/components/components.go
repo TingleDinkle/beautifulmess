@@ -52,3 +52,7 @@ type ProjectileEmitter struct {
 	Interval float64
 	LastTime float64
 }
+
+type Lifetime struct {
+	TimeRemaining float64
+}
