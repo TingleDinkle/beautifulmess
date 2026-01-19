@@ -206,23 +206,39 @@ func NewGame() *Game {
 
 	
 
-		// Entity archetypes are composed through data rather than rigid inheritance
-
-		g.SpectreID = w.CreateEntity()
-
-		w.Tags[g.SpectreID] = &components.Tag{Name: "spectre"}
-
-		w.Transforms[g.SpectreID] = &components.Transform{Position: lvl.StartP2}
-
-		w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: 0.96, Mass: 1.0, GravityMultiplier: 3.5}
-
-		w.Renders[g.SpectreID] = &components.Render{Sprite: g.SpriteSpectre, Color: color.RGBA{255, 50, 50, 255}, Glow: true}
-
-		w.AIs[g.SpectreID] = &components.AI{ScriptName: "spectre.lua"}
+				// Entity archetypes are composed through data rather than rigid inheritance
 
 	
 
-		g.RunnerID = w.CreateEntity()
+				g.SpectreID = w.CreateEntity()
+
+	
+
+				w.Tags[g.SpectreID] = &components.Tag{Name: "spectre"}
+
+	
+
+				w.Transforms[g.SpectreID] = &components.Transform{Position: lvl.StartP2}
+
+	
+
+				w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: 0.96, Mass: 1.0, GravityMultiplier: 3.5}
+
+	
+
+				w.Renders[g.SpectreID] = &components.Render{Sprite: g.SpriteSpectre, Color: color.RGBA{255, 50, 50, 255}, Glow: true}
+
+	
+
+				w.AIs[g.SpectreID] = &components.AI{ScriptName: "spectre.lua"}
+
+	
+
+			
+
+	
+
+				g.RunnerID = w.CreateEntity()
 
 		w.Tags[g.RunnerID] = &components.Tag{Name: "runner"}
 
@@ -451,7 +467,14 @@ func (g *Game) drawWorld(screen *ebiten.Image, shake core.Vector2) {
 	g.World.Particles.Draw(screen)
 	
 	lvl := &g.Levels[g.CurrentLevel]
-	systems.DrawLevel(screen, g.World, lvl, g.World.Transforms[g.SpectreID].Position, shake)
+	
+	// Safe entity tracking ensures the renderer remains stable even during state transitions
+	spectrePos := core.Vector2{}
+	if trans, ok := g.World.Transforms[g.SpectreID]; ok {
+		spectrePos = trans.Position
+	}
+	
+	systems.DrawLevel(screen, g.World, lvl, spectrePos, shake)
 	
 	g.drawMist(screen)
 	systems.DrawEntities(screen, g.World, shake)

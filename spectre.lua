@@ -23,16 +23,11 @@ function spectre.update_state(id, mem_x, mem_y, mem_radius, well_x, well_y)
     if current_state ~= STATE_SPRINT then stamina = math.min(max_stamina, stamina + 0.5) end
 
     -- Threat-response logic triggers evasion when the runner enters the spectre's personal space
-    if dist < 150 and current_state == STATE_CRUISE then
+    if dist < 120 and current_state == STATE_CRUISE then
         if stamina > 30 then
-            -- Randomization prevents predictable movement patterns that are easily exploited
-            if math.random() < 0.4 then
-                current_state = STATE_JINK; state_timer = 20; jink_dir = (math.random()<0.5) and 1 or -1
-                play_sound("spectre_dash")
-            else
-                current_state = STATE_SPRINT; state_timer = 60
-                play_sound("spectre_dash")
-            end
+            -- Active counter-force maneuvers prevent the player from easily maintaining contact
+            current_state = STATE_JINK; state_timer = 15; jink_dir = (math.random()<0.5) and 1 or -1
+            play_sound("spectre_dash")
         else
             current_state = STATE_RECOVER; state_timer = 40
         end
@@ -45,11 +40,12 @@ function spectre.update_state(id, mem_x, mem_y, mem_radius, well_x, well_y)
         elseif current_state == STATE_RECOVER then current_state = STATE_CRUISE end
     end
     
-    -- Erratic forces near memory nodes simulate the narrative 'struggle' against re-assimilation
+    -- Resistance forces near memory nodes simulate the narrative 'struggle' against re-assimilation
     local to_mem_x, to_mem_y, mem_dist = get_vec_to(id, mem_x, mem_y)
     if mem_dist < mem_radius then
-        apply_force(id, to_mem_x * 1.5, to_mem_y * 1.5)
-        apply_force(id, (math.random()-0.5)*2, (math.random()-0.5)*2)
+        -- Fleeing the singularity represents the spectre's vestigial survival instinct
+        apply_force(id, -to_mem_x * 2.5, -to_mem_y * 2.5)
+        apply_force(id, (math.random()-0.5)*4, (math.random()-0.5)*4)
         return
     end
 
@@ -59,10 +55,11 @@ function spectre.update_state(id, mem_x, mem_y, mem_radius, well_x, well_y)
         set_max_speed(id, 4.0)
         fx, fy = -to_opp_x * 0.5, -to_opp_y * 0.5
         
-        -- Spiral-in logic uses gravity wells as slingshots for efficient traversal
+        -- Singularity avoidance simulates active engine compensation against gravitational pull
         local to_well_x, to_well_y, well_dist = get_vec_to(id, well_x, well_y)
-        if well_dist < 300 and well_dist > 50 then
-             fx, fy = fx + (to_well_x * 0.4), fy + (to_well_y * 0.4)
+        if well_dist < 400 then
+             -- Applying a counter-force away from the well increases the effort required to trap the entity
+             fx, fy = fx - (to_well_x * 1.2), fy - (to_well_y * 1.2)
         end
         
     elseif current_state == STATE_SPRINT then

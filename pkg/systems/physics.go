@@ -31,20 +31,19 @@ func applyForces(id core.Entity, w *world.World) {
 	}
 
 	for wellID, well := range w.GravityWells {
-		if well == nil { continue }
+		if well == nil || id == wellID { continue } // Self-gravitation is physically impossible in this model
 		wellTrans, ok := w.Transforms[wellID]
 		if !ok { continue }
 
 		delta := core.VecToWrapped(trans.Position, wellTrans.Position)
 		d := math.Max(10, math.Sqrt(delta.X*delta.X+delta.Y*delta.Y))
 
-		// Inverse-square law provides classic, predictable orbital mechanics
-		force := (well.Mass * 500) / (d * d)
-		force = math.Min(2.0, force)
-
-		if phys.GravityMultiplier > 0 {
-			force *= phys.GravityMultiplier
-		}
+		// A dynamic gravity multiplier allows the environment to become increasingly hostile as the narrative progresses
+		multiplier := phys.GravityMultiplier
+		if multiplier <= 0 { multiplier = 1.0 }
+		
+		force := ((well.Mass * 500) / (d * d)) * multiplier
+		force = math.Min(5.0, force) // Increased clamp to allow for extreme gravitational 'trap' states
 
 		phys.Acceleration.X += (delta.X / d) * force
 		phys.Acceleration.Y += (delta.Y / d) * force
@@ -106,16 +105,16 @@ func handleCollisions(id core.Entity, w *world.World) {
 		for specID, specTag := range w.Tags {
 			if specTag.Name != "spectre" { continue }
 			
-			specTrans, okST := w.Transforms[specID]
-			specPhys, okSP := w.Physics[specID]
-			if okST && okSP {
-				if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-					// Absorbed bullets increase gravity susceptibility, forcing narrative progression
-					specPhys.GravityMultiplier += 0.5
-					w.Audio.Play("boom")
-					w.ScreenShake += 8.0
-					w.DestroyEntity(id)
-					return
+			if specTrans, okST := w.Transforms[specID]; okST {
+				if specPhys, okSP := w.Physics[specID]; okSP {
+					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+						// Absorbing high-velocity projectiles significantly increases local mass-susceptibility
+						specPhys.GravityMultiplier += 1.0
+						w.Audio.Play("boom")
+						w.ScreenShake += 8.0
+						w.DestroyEntity(id)
+						return
+					}
 				}
 			}
 		}
