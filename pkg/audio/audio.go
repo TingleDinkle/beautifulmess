@@ -2,7 +2,6 @@ package audio
 
 import (
 	"io"
-	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -15,7 +14,7 @@ const SampleRate = 44100
 
 type AudioSystem struct {
 	Context *audio.Context
-	Samples map[string][]byte // Storing raw PCM data enables multi-channel polyphony
+	Pools   map[string][]*audio.Player // Player pooling prevents heap fragmentation and resource exhaustion
 }
 
 func NewAudioSystem() *AudioSystem {
@@ -23,52 +22,60 @@ func NewAudioSystem() *AudioSystem {
 	ctx := audio.NewContext(SampleRate)
 	as := &AudioSystem{
 		Context: ctx,
-		Samples: make(map[string][]byte),
 	}
-
-	as.generateInternalSounds()
+	as.init()
 	return as
 }
 
-func (as *AudioSystem) LoadFile(name, path string) {
-	// Pre-loading assets into memory avoids disk I/O latency during time-critical game events
-	f, err := os.Open(path)
-	if err != nil {
-		log.Printf("Audio Load Error: %v", err)
-		return
+func (as *AudioSystem) init() {
+	as.Pools = make(map[string][]*audio.Player)
+	// Internal sounds are synthesized once and pooled to ensure low-latency feedback fallbacks
+	as.addPool("boost", genBlitz(0.3))
+	as.addPool("chime", genSine(880, 0.5))
+	as.addPool("drone", genSine(110, 2.0))
+	as.addPool("spectre_dash", genBreathyNoise(0.5))
+}
+
+func (as *AudioSystem) addPool(name string, b []byte) {
+	// A pool size of 8 provides sufficient polyphony for overlapping arcade effects without bloat
+	const poolSize = 8
+	pool := make([]*audio.Player, poolSize)
+	for i := 0; i < poolSize; i++ {
+		pool[i] = as.Context.NewPlayerFromBytes(b)
 	}
+	as.Pools[name] = pool
+}
+
+func (as *AudioSystem) LoadFile(name, path string) {
+	f, err := os.Open(path)
+	if err != nil { return }
 	defer f.Close()
 
 	d, err := wav.DecodeWithSampleRate(SampleRate, f)
-	if err != nil {
-		log.Printf("WAV Decode Error: %v", err)
-		return
-	}
+	if err != nil { return }
 
 	b, err := io.ReadAll(d)
-	if err != nil {
-		log.Printf("Audio Read Error: %v", err)
-		return
-	}
+	if err != nil { return }
 
-	as.Samples[name] = b
+	as.addPool(name, b)
 }
 
 func (as *AudioSystem) Play(name string) {
-	// Instantiating a new player from cached bytes allows overlapping instances of the same sound
-	if b, ok := as.Samples[name]; ok {
-		p := as.Context.NewPlayerFromBytes(b)
-		p.Play()
+	// Round-robin selection provides a simple, lock-free way to achieve polyphony
+	if pool, ok := as.Pools[name]; ok {
+		for _, p := range pool {
+			if !p.IsPlaying() {
+				p.Rewind()
+				p.Play()
+				return
+			}
+		}
+		// If all players are busy, stealing the oldest (0) ensures feedback continuity
+		pool[0].Rewind()
+		pool[0].Play()
 	}
 }
 
-func (as *AudioSystem) generateInternalSounds() {
-	// Synthetic sound generation provides a zero-dependency fallback for core game feedback
-	as.Samples["boost"] = genBlitz(0.3)
-	as.Samples["chime"] = genSine(880, 0.5)
-	as.Samples["drone"] = genSine(110, 2.0)
-	as.Samples["spectre_dash"] = genBreathyNoise(0.5)
-}
 
 func genBlitz(duration float64) []byte {
 	// A sub-bass 'thump' combined with a clean aerodynamic sweep simulates extreme velocity displacement

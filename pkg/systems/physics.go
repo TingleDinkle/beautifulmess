@@ -42,13 +42,14 @@ func applyForces(id core.Entity, w *world.World) {
 		multiplier := phys.GravityMultiplier
 		if multiplier <= 0 { multiplier = 1.0 }
 		
-		force := ((well.Mass * 500) / (d * d)) * multiplier
-		force = math.Min(5.0, force) // Increased clamp to allow for extreme gravitational 'trap' states
+		// Pre-calculating the force-to-distance ratio minimizes redundant division operations in the physics loop
+		fRatio := math.Min(5.0, (well.Mass*500)/(d*d)) * multiplier / d
 
-		phys.Acceleration.X += (delta.X / d) * force
-		phys.Acceleration.Y += (delta.Y / d) * force
+		phys.Acceleration.X += delta.X * fRatio
+		phys.Acceleration.Y += delta.Y * fRatio
 	}
 }
+
 
 func integrate(phys *components.Physics, trans *components.Transform) {
 	// Semi-implicit Euler integration preserves system energy better than standard Euler
@@ -85,8 +86,9 @@ func handleCollisions(id core.Entity, w *world.World) {
 		wallTrans, ok := w.Transforms[wallID]
 		if !ok { continue }
 
-		dx := math.Abs(trans.Position.X - wallTrans.Position.X)
-		dy := math.Abs(trans.Position.Y - wallTrans.Position.Y)
+		// Wrapped distance calculation ensures that fixed geometry behaves consistently with the toroidal universe
+		delta := core.VecToWrapped(trans.Position, wallTrans.Position)
+		dx, dy := math.Abs(delta.X), math.Abs(delta.Y)
 
 		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
 			if hasTag && tag.Name == "bullet" {
