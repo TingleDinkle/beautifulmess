@@ -10,7 +10,7 @@ import (
 )
 
 type World struct {
-	// Contiguous slice-based storage remains the foundation for cache-coherent data access
+	// Pointer-slices provide O(1) access with safe nil-validation for stable IDs
 	Transforms       []*components.Transform
 	Physics          []*components.Physics
 	Renders          []*components.Render
@@ -22,11 +22,12 @@ type World struct {
 	ProjectileEmitters []*components.ProjectileEmitter
 	Lifetimes        []*components.Lifetime
 	
+	// Active lists allow systems to skip empty slots, maintaining high ALU throughput
 	ActiveEntities []core.Entity 
 	ActiveWalls    []core.Entity
 
-	// A Spatial Hash Grid reduces collision complexity from O(N*M) to nearly O(N)
-	Grid [13][8][]core.Entity // Divided into 100px buckets for rapid spatial queries
+	// A Spatial Hash Grid optimizes static geometry queries to O(1) neighborhood checks
+	Grid [13][8][]core.Entity 
 
 	Particles *particles.ParticleSystem
 	Audio     *audio.AudioSystem
@@ -47,21 +48,15 @@ func NewWorld() *World {
 }
 
 func (w *World) Reset() {
-	w.Transforms = w.Transforms[:0]
-	w.Physics = w.Physics[:0]
-	w.Renders = w.Renders[:0]
-	w.AIs = w.AIs[:0]
-	w.Tags = w.Tags[:0]
-	w.GravityWells = w.GravityWells[:0]
-	w.InputControlleds = w.InputControlleds[:0]
-	w.Walls = w.Walls[:0]
-	w.ProjectileEmitters = w.ProjectileEmitters[:0]
-	w.Lifetimes = w.Lifetimes[:0]
+	// Slice truncation retains capacity to eliminate heap churn during level resets
+	w.Transforms, w.Physics, w.Renders = w.Transforms[:0], w.Physics[:0], w.Renders[:0]
+	w.AIs, w.Tags, w.GravityWells = w.AIs[:0], w.Tags[:0], w.GravityWells[:0]
+	w.InputControlleds, w.Walls = w.InputControlleds[:0], w.Walls[:0]
+	w.ProjectileEmitters, w.Lifetimes = w.ProjectileEmitters[:0], w.Lifetimes[:0]
 	
 	w.ActiveEntities = w.ActiveEntities[:0]
 	w.ActiveWalls = w.ActiveWalls[:0]
 	
-	// Clearing the grid avoids stale spatial references across level transitions
 	for x := 0; x < 13; x++ {
 		for y := 0; y < 8; y++ {
 			w.Grid[x][y] = w.Grid[x][y][:0]
@@ -71,27 +66,6 @@ func (w *World) Reset() {
 	w.nextID = 0
 	w.ScreenShake = 0
 }
-
-func (w *World) UpdateGrid() {
-	// Re-indexing the grid every frame is faster than complex pointer-tracking for dynamic entities
-	for x := 0; x < 13; x++ {
-		for y := 0; y < 8; y++ {
-			w.Grid[x][y] = w.Grid[x][y][:0]
-		}
-	}
-
-	for _, id := range w.ActiveWalls {
-		trans := w.Transforms[id]
-		if trans == nil { continue }
-		
-		gx, gy := int(trans.Position.X/100), int(trans.Position.Y/100)
-		// Clamping ensures that entity drift doesn't cause out-of-bounds memory access
-		if gx >= 0 && gx < 13 && gy >= 0 && gy < 8 {
-			w.Grid[gx][gy] = append(w.Grid[gx][gy], id)
-		}
-	}
-}
-
 
 func (w *World) CreateEntity() core.Entity {
 	id := w.nextID
@@ -113,7 +87,6 @@ func (w *World) CreateEntity() core.Entity {
 }
 
 func (w *World) AddToActiveWalls(id core.Entity) {
-	// Specialized lists for static geometry optimize collision and rendering subsystems
 	w.ActiveWalls = append(w.ActiveWalls, id)
 }
 
@@ -121,18 +94,11 @@ func (w *World) DestroyEntity(id core.Entity) {
 	idx := int(id)
 	if idx >= len(w.Transforms) { return }
 	
-	w.Transforms[idx] = nil
-	w.Physics[idx] = nil
-	w.Renders[idx] = nil
-	w.AIs[idx] = nil
-	w.Tags[idx] = nil
-	w.GravityWells[idx] = nil
-	w.InputControlleds[idx] = nil
-	w.Walls[idx] = nil
-	w.ProjectileEmitters[idx] = nil
-	w.Lifetimes[idx] = nil
+	w.Transforms[idx], w.Physics[idx], w.Renders[idx] = nil, nil, nil
+	w.AIs[idx], w.Tags[idx], w.GravityWells[idx] = nil, nil, nil
+	w.InputControlleds[idx], w.Walls[idx] = nil, nil
+	w.ProjectileEmitters[idx], w.Lifetimes[idx] = nil, nil
 
-	// Removal from active lists prevents systems from visiting nullified component slots
 	for i, eid := range w.ActiveEntities {
 		if eid == id {
 			w.ActiveEntities[i] = w.ActiveEntities[len(w.ActiveEntities)-1]
@@ -149,6 +115,20 @@ func (w *World) DestroyEntity(id core.Entity) {
 	}
 }
 
+func (w *World) UpdateGrid() {
+	for x := 0; x < 13; x++ {
+		for y := 0; y < 8; y++ {
+			w.Grid[x][y] = w.Grid[x][y][:0]
+		}
+	}
 
-
-
+	for _, id := range w.ActiveWalls {
+		trans := w.Transforms[id]
+		if trans == nil { continue }
+		
+		gx, gy := int(trans.Position.X/100), int(trans.Position.Y/100)
+		if gx >= 0 && gx < 13 && gy >= 0 && gy < 8 {
+			w.Grid[gx][gy] = append(w.Grid[gx][gy], id)
+		}
+	}
+}

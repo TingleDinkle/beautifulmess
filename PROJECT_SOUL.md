@@ -1,60 +1,61 @@
-# THE ARCHITECTURE OF A BEAUTIFUL MESS
+# THE ARCHITECTURE OF A BEAUTIFUL MESS (V2: REUNION)
 
 **To Future Me (and anyone else lost in the void):**
 
-This project is not just a game; it is an engine for generating tragedy and catharsis at 60 FPS. If you are reading this, you are probably trying to fix a bug or add a new feature.
+This project has evolved. It is no longer just a tragedy engine; it is a machine for finding common ground. We have merged the "Rigid Physics" of the void with the "Astro-Style" kinetic energy of arcade combat.
 
-Here is the philosophy. Don't break the magic.
+Here is the updated philosophy. Respect the polish.
 
 ---
 
-## 1. The Core Philosophy: "Rigid World, Fluid Soul"
+## 1. The Core Philosophy: "Precision Logic, Explosive Emotion"
 
-We use a strict separation of concerns because feelings are messy, but code shouldn't be.
+We still use a strict separation of concerns, but the boundaries are sharper.
 
-*   **Go (The Laws of Physics):** The Universe. It is unyielding. It handles Gravity, Collision, and Time. It doesn't care if you are sad; it only cares about `F = ma`.
-*   **Lua (The Ghosts):** The AI. It is fluid, hot-reloadable, and messy. The `Spectre` lives here. She calculates her next move based on fear, stamina, and orbital mechanics.
-*   **Shaders (The Vibe):** The Mood. We don't draw pixels; we paint math. The background is a fragment shader because textures are too static for this universe.
+*   **Go (The Laws of Physics):** The Universe. Now optimized at the hardware level. It handles $O(N)$ linear updates via Active Lists and $O(1)$ collisions via a Spatial Hash Grid. It is unyielding and blazing fast.
+*   **Lua (The Ghosts):** The AI. The `Spectre` now actively resists the void. She doesn't just orbit; she fights to stay free until you increase her mass enough to pull her home.
+*   **The Juice (The Vibe):** Impact matters. Every shot has recoil, every hit has a stop, and every reunion has a bloom. We paint with math, but we also paint with particles.
 
-## 2. The Tech Stack (Why we chose this)
+## 2. The Tech Stack (The "Nintendo-Grade" Overhaul)
 
-*   **ECS (Entity Component System):**
-    *   We don't use Object-Oriented hierarchies (`class Player extends Entity`). That path leads to spaghetti hell.
-    *   We use **Data-Driven Design**. A "Black Hole" is just an Entity with a `Position` and a `GravityWell` component.
-    *   *Benefit:* You want to make the Runner have gravity? Just add the component. You want the Spectre to leave a frost trail? Add the `Render` tag. It is infinitely expandable.
+*   **High-Performance ECS:**
+    *   We moved from Maps to **Slices of Pointers**. This gives us $O(1)$ indexing while keeping the safety of Go's `nil` checks.
+    *   **Active List Tracking:** We only iterate over entities that are alive (`ActiveEntities`). We don't waste CPU cycles on the empty void.
+    *   **Spatial Hash Grid:** A 100px grid buckets static geometry. Collision cost is now constant, regardless of map density.
 
-*   **Toroidal Topology:**
-    *   The world wraps. `x = -10` is actually `x = ScreenWidth - 10`.
-    *   *Why?* Because corners are boring. In a relationship, you can't just run away; you eventually end up back where you started.
+*   **The Destruction Engine (Shatter):**
+    *   Destruction is an event. The `shatterEntity` logic uses a dual-layer particle burst with **inherited momentum** and **quirky behaviors** (Orbiting fragments, Flickering sparks).
+    *   **Universal Ricochets:** Bullets are high-energy data packets. They bounce off every surface, allowing for complex multi-hit trick shots.
 
-## 3. The Entities (How they think)
+*   **The Audio Pipeline (Polyphonic Pooling):**
+    *   We don't cut off sounds. We use a **Player Recycling Pool** (8 channels per sample). Overlapping explosions and blitz-dashes create a rich, cinematic soundscape.
 
-### The Runner (You)
-*   **Archetype:** *Tokyo-Spliff Cyberpunk.*
-*   **Feel:** Twitchy, high-acceleration, "glitch" movement.
-*   **Code:** You are the only thing that breaks the rules (using `Shift` to overdrive physics).
+## 3. The Mechanics (How the game feels)
 
-### The Spectre (Her)
-*   **Archetype:** *Gothic Spirit.*
-*   **Feel:** Heavy, inertial, flowing. She doesn't turn instantly; she steers.
-*   **The Brain:** She uses a Utility-Based State Machine.
-    1.  **Cruise:** Save energy.
-    2.  **Jink:** You got too close? Break ankles.
-    3.  **Orbit:** Use a Black Hole to sling-shot away.
+### The Blitz Dash (You)
+*   **Feel:** Supersonic, weighted, physical.
+*   **Logic:** Holding `Shift` or `C` triggers **Speed Overdrive**. Your `MaxSpeed` doubles, and your thrusters emit heavy particles. The sub-bass "Blitz" thump reinforces the displacement.
+
+### The Escape Artist (Her)
+*   **Feel:** Defensive, reactive, intelligent.
+*   **The Brain:** She monitors your proximity and the nearest singularity. She will actively apply counter-forces to flee the gravity well until you shoot her to increase her susceptibility.
+
+### The Reunion (The Goal)
+*   **The Transition:** When you catch her near a well, the level doesn't just end. It **blooms**. The singularities turn into beacons, and a "Sunshine Pixelizing" effect sweeps the grid, signifying that common ground has been found.
 
 ## 4. The Rules of Engagement
 
-1.  **Gravity is a Trap:** Inside the Event Horizon, gravity multiplies by 4x. It goes from "Influence" to "Cage."
-2.  **The Memory:** The goal is always *inside* the danger zone. You have to fly into the singularity to find the truth.
-3.  **Entropy:** The `FrostMask`. It heals over time. Your impact on the world is temporary. Keep moving or be forgotten.
+1.  **Recoil is a Penalty:** Every shot pushes you back. Blind firing will kill your momentum. Timing is everything.
+2.  **Gravity is a Tool:** Use the singularities to slingshot yourself or trap her. 
+3.  **Memory Fragments:** Narrative popups now support **multi-photo pagination**. Use A/D to explore the fragmented history of the union.
 
 ## 5. How to Expand This
 
-*   **Adding a Level:** Go to `initLevels`. Add a struct. Done.
-*   **Adding a New Behavior:** Write a Lua script. The Go engine exposes `apply_force` and `cast_ray`. You don't need to recompile Go to make the Spectre smarter.
-*   **Making it Prettier:** Edit the Kage shaders in `main.go`. We paint with math here.
+*   **Adding a Level:** Go to `InitLevels` in `pkg/level/level.go`. Use `genGrid` or `genLine` to build new structures.
+*   **Adding Sound:** Put a `.wav` in `assets/`, call `LoadFile` in `main.go`, and use `w.Audio.Play` anywhere. The pooler handles the rest.
+*   **Adding Juice:** Every physical interaction should trigger `w.ScreenShake`. It's the primary way the game speaks to the player.
 
 ---
 
 **Final Note:**
-The code is clean so the experience can be messy. Keep the ECS pure. Don't let game logic leak into the rendering loop.
+The code is optimized so the emotion can be loud. Keep the loops tight and the transitions beautiful. Don't let technical debt clutter the soul of the mess.
