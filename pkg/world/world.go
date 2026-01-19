@@ -10,7 +10,7 @@ import (
 )
 
 type World struct {
-	// Slices replace maps to provide cache-aligned, contiguous memory access
+	// Contiguous slice-based storage remains the foundation for cache-coherent data access
 	Transforms       []*components.Transform
 	Physics          []*components.Physics
 	Renders          []*components.Render
@@ -22,9 +22,11 @@ type World struct {
 	ProjectileEmitters []*components.ProjectileEmitter
 	Lifetimes        []*components.Lifetime
 	
-	// Active lists allow systems to skip empty 'nil' slots in component slices, maximizing CPU throughput
 	ActiveEntities []core.Entity 
 	ActiveWalls    []core.Entity
+
+	// A Spatial Hash Grid reduces collision complexity from O(N*M) to nearly O(N)
+	Grid [13][8][]core.Entity // Divided into 100px buckets for rapid spatial queries
 
 	Particles *particles.ParticleSystem
 	Audio     *audio.AudioSystem
@@ -45,7 +47,6 @@ func NewWorld() *World {
 }
 
 func (w *World) Reset() {
-	// Truncating while keeping capacity minimizes future heap allocations
 	w.Transforms = w.Transforms[:0]
 	w.Physics = w.Physics[:0]
 	w.Renders = w.Renders[:0]
@@ -60,9 +61,37 @@ func (w *World) Reset() {
 	w.ActiveEntities = w.ActiveEntities[:0]
 	w.ActiveWalls = w.ActiveWalls[:0]
 	
+	// Clearing the grid avoids stale spatial references across level transitions
+	for x := 0; x < 13; x++ {
+		for y := 0; y < 8; y++ {
+			w.Grid[x][y] = w.Grid[x][y][:0]
+		}
+	}
+	
 	w.nextID = 0
 	w.ScreenShake = 0
 }
+
+func (w *World) UpdateGrid() {
+	// Re-indexing the grid every frame is faster than complex pointer-tracking for dynamic entities
+	for x := 0; x < 13; x++ {
+		for y := 0; y < 8; y++ {
+			w.Grid[x][y] = w.Grid[x][y][:0]
+		}
+	}
+
+	for _, id := range w.ActiveWalls {
+		trans := w.Transforms[id]
+		if trans == nil { continue }
+		
+		gx, gy := int(trans.Position.X/100), int(trans.Position.Y/100)
+		// Clamping ensures that entity drift doesn't cause out-of-bounds memory access
+		if gx >= 0 && gx < 13 && gy >= 0 && gy < 8 {
+			w.Grid[gx][gy] = append(w.Grid[gx][gy], id)
+		}
+	}
+}
+
 
 func (w *World) CreateEntity() core.Entity {
 	id := w.nextID

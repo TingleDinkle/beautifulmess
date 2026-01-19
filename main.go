@@ -446,6 +446,9 @@ func (g *Game) updateActive() error {
 	g.World.ScreenShake *= 0.9
 	if g.World.ScreenShake < 0.5 { g.World.ScreenShake = 0 }
 
+	// Re-calculating spatial buckets ensures that physics queries are performed against the latest environmental state
+	g.World.UpdateGrid()
+
 	lvl := &g.Levels[g.CurrentLevel]
 	systems.SystemInput(g.World)
 	systems.SystemAI(g.World, lvl)

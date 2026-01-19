@@ -76,200 +76,74 @@ func integrate(phys *components.Physics, trans *components.Transform) {
 
 
 func handleCollisions(id core.Entity, w *world.World) {
-
-
 	trans := w.Transforms[id]
-
-
 	phys := w.Physics[id]
-
-
 	if trans == nil || phys == nil { return }
-
-
 	
-
-
 	tag := w.Tags[id]
 
+	// Querying the spatial grid neighbor-cells handles toroidal-wrapped collisions with zero overhead
+	gx, gy := int(trans.Position.X/100), int(trans.Position.Y/100)
+	for dx := -1; dx <= 1; dx++ {
+		for dy := -1; dy <= 1; dy++ {
+			// Wrapping cell indices ensures consistent spatial awareness at the universe edges
+			tx, ty := (gx+dx+13)%13, (gy+dy+8)%8
+			
+			for _, wallID := range w.Grid[tx][ty] {
+				wall := w.Walls[wallID]
+				if wall == nil || wall.IsDestroyed { continue }
+				wallTrans := w.Transforms[wallID]
+				if wallTrans == nil { continue }
 
+				delta := core.VecToWrapped(trans.Position, wallTrans.Position)
+				adx, ady := math.Abs(delta.X), math.Abs(delta.Y)
 
+				if adx < (5.0 + wall.Size/2) && ady < (5.0 + wall.Size/2) {
+					if tag != nil && tag.Name == "bullet" {
+						if adx > ady {
+							phys.Velocity.X *= -1.0
+							if delta.X > 0 { trans.Position.X = wallTrans.Position.X - (5.1 + wall.Size/2) } else { trans.Position.X = wallTrans.Position.X + (5.1 + wall.Size/2) }
+						} else {
+							phys.Velocity.Y *= -1.0
+							if delta.Y > 0 { trans.Position.Y = wallTrans.Position.Y - (5.1 + wall.Size/2) } else { trans.Position.Y = wallTrans.Position.Y + (5.1 + wall.Size/2) }
+						}
 
-
-	// Proximity checks against static geometry maintain high framerates in dense levels
-
-
-	for wallID, wall := range w.Walls {
-
-
-		if wall == nil || wall.IsDestroyed { continue }
-
-
-		wallTrans := w.Transforms[wallID]
-
-
-		if wallTrans == nil { continue }
-
-
-
-
-
-		// Distance checks must account for toroidal wrapping to prevent 'ghosting' through world edges
-
-
-		delta := core.VecToWrapped(trans.Position, wallTrans.Position)
-
-
-		dx, dy := math.Abs(delta.X), math.Abs(delta.Y)
-
-
-
-
-
-		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
-
-
-			if tag != nil && tag.Name == "bullet" {
-
-
-				// Universal ricochets allow bullets to persist in the play area, accelerating the pace of destruction
-
-
-				if dx > dy {
-
-
-					phys.Velocity.X *= -1.0
-
-
-					if delta.X > 0 { trans.Position.X = wallTrans.Position.X - (5.1 + wall.Size/2) } else { trans.Position.X = wallTrans.Position.X + (5.1 + wall.Size/2) }
-
-
-				} else {
-
-
-					phys.Velocity.Y *= -1.0
-
-
-					if delta.Y > 0 { trans.Position.Y = wallTrans.Position.Y - (5.1 + wall.Size/2) } else { trans.Position.Y = wallTrans.Position.Y + (5.1 + wall.Size/2) }
-
-
+						if wall.Destructible {
+							shatterEntity(w, wallID, phys.Velocity)
+							w.Audio.Play("boom") 
+							w.ScreenShake += 4.0
+							w.DestroyEntity(wallID)
+						} else {
+							emitImpactFeedback(w, trans.Position)
+							w.ScreenShake += 1.0
+						}
+						return
+					}
+					phys.Velocity.X, phys.Velocity.Y = 0, 0
 				}
-
-
-
-
-
-				if wall.Destructible {
-
-
-					shatterEntity(w, core.Entity(wallID), phys.Velocity)
-
-
-					w.Audio.Play("boom") 
-
-
-					w.ScreenShake += 4.0
-
-
-					w.DestroyEntity(core.Entity(wallID))
-
-
-				} else {
-
-
-					emitImpactFeedback(w, trans.Position)
-
-
-					w.ScreenShake += 1.0
-
-
-				}
-
-
-				return
-
-
 			}
-
-
-
-
-
-			// Inelastic collision response prevents physical bodies from passing through solid data structures
-
-
-			phys.Velocity.X, phys.Velocity.Y = 0, 0
-
-
 		}
-
-
 	}
-
-
-
-
-
-	// Entity interaction logic supports high-speed combat resolution
-
 
 	if tag != nil && tag.Name == "bullet" {
-
-
-		for specID, specTag := range w.Tags {
-
-
+		for _, specID := range w.ActiveEntities {
+			specTag := w.Tags[specID]
 			if specTag == nil || specTag.Name != "spectre" { continue }
-
-
 			
-
-
-			specTrans := w.Transforms[specID]
-
-
-			specPhys := w.Physics[specID]
-
-
+			specTrans, specPhys := w.Transforms[specID], w.Physics[specID]
 			if specTrans != nil && specPhys != nil {
-
-
-				if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-
-
-					// Increasing susceptibility to gravity forces the spectre toward environmental hazards
-
-
+				// 400 represents the squared radius (20^2), providing a zero-sqrt hit-detection path
+				if core.DistSqWrapped(trans.Position, specTrans.Position) < 400 {
 					specPhys.GravityMultiplier += 1.0
-
-
 					w.Audio.Play("boom")
-
-
 					w.ScreenShake += 8.0
-
-
-					shatterEntity(w, core.Entity(specID), phys.Velocity)
-
-
+					shatterEntity(w, specID, phys.Velocity)
 					w.DestroyEntity(id)
-
-
 					return
-
-
 				}
-
-
 			}
-
-
 		}
-
-
 	}
-
-
 }
 
 

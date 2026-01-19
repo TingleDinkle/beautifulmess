@@ -78,18 +78,27 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 	w, h := img.Size()
 	halfW, halfH := float64(w)/2, float64(h)/2
 	
-	const sw, sh = float32(core.ScreenWidth), float32(core.ScreenHeight)
+	const scrW, scrH = float32(core.ScreenWidth), float32(core.ScreenHeight)
 	sizeW, sizeH := float32(float64(w)*scale), float32(float64(h)*scale)
 
-	// Pre-configuring DrawOptions outside the wrap-loop minimizes heap allocations per frame
 	op := &ebiten.DrawImageOptions{}
 	op.Filter = ebiten.FilterNearest 
 	op.ColorScale.ScaleWithColor(clr)
 
+	// If the entity is far from the world edges, we bypass the 9-way wrap loop to save CPU/GPU cycles
+	const margin = 100.0
+	if pos.X > margin && pos.X < float64(core.ScreenWidth)-margin && pos.Y > margin && pos.Y < float64(core.ScreenHeight)-margin {
+		op.GeoM.Translate(-halfW, -halfH)
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Rotate(rot)
+		op.GeoM.Translate(pos.X, pos.Y)
+		screen.DrawImage(img, op)
+		return
+	}
+
 	for ox := -1.0; ox <= 1.0; ox++ {
 		for oy := -1.0; oy <= 1.0; oy++ {
-			x := float32(pos.X) + float32(ox)*sw
-			y := float32(pos.Y) + float32(oy)*sh
+			x, y := float32(pos.X)+float32(ox)*scrW, float32(pos.Y)+float32(oy)*scrH
 
 			if !isVisible(x, y, sizeW, sizeH) { continue }
 
