@@ -3,10 +3,16 @@ package core
 import "math"
 
 func DistWrapped(a, b Vector2) float64 {
-	// Wrapped distance calculation supports the non-Euclidean toroidal geometry of the game world
-	d := VecToWrapped(a, b)
-	return math.Sqrt(d.X*d.X + d.Y*d.Y)
+	// Standard distance is kept for narrative logic where absolute units are required
+	return math.Sqrt(DistSqWrapped(a, b))
 }
+
+func DistSqWrapped(a, b Vector2) float64 {
+	// Squared distance avoids the computationally expensive Square Root operation during hot-path proximity checks
+	d := VecToWrapped(a, b)
+	return d.X*d.X + d.Y*d.Y
+}
+
 
 func VecToWrapped(from, to Vector2) Vector2 {
 	// Calculating the shortest path across boundaries allows AI and physics to ignore the coordinate discontinuity
