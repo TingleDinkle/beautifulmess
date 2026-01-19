@@ -16,6 +16,7 @@ func SystemProjectileEmitter(w *world.World) {
 	now := float64(time.Now().UnixNano()) / 1e9
 
 	for id, emitter := range w.ProjectileEmitters {
+		if emitter == nil { continue }
 		if now > emitter.LastTime+emitter.Interval {
 			emitter.LastTime = now
 
@@ -24,13 +25,13 @@ func SystemProjectileEmitter(w *world.World) {
 			// Visual and physical feedback reinforces the gun's power scale
 			w.ScreenShake += 2.0
 
-			trans, ok := w.Transforms[id]
-			if !ok { continue }
+			trans := w.Transforms[id]
+			if trans == nil { continue }
 
 			dirX, dirY := math.Cos(trans.Rotation), math.Sin(trans.Rotation)
 			
 			// Newton's third law: Recoil provides a tactile penalty for blind-firing
-			if phys, ok := w.Physics[id]; ok {
+			if phys := w.Physics[id]; phys != nil {
 				phys.Velocity.X -= dirX * 1.5
 				phys.Velocity.Y -= dirY * 1.5
 			}

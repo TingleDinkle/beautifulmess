@@ -12,15 +12,16 @@ import (
 )
 
 func SystemPhysics(w *world.World) {
+	// Cache-friendly sequential iteration over component slices minimizes CPU pipeline stalls
 	for id, phys := range w.Physics {
 		if phys == nil { continue }
-		trans, ok := w.Transforms[id]
-		if !ok { continue }
+		trans := w.Transforms[id]
+		if trans == nil { continue }
 
-		applyForces(id, w)
+		applyForces(core.Entity(id), w)
 		integrate(phys, trans)
 		core.WrapPosition(&trans.Position)
-		handleCollisions(id, w)
+		handleCollisions(core.Entity(id), w)
 	}
 }
 
@@ -29,29 +30,28 @@ func applyForces(id core.Entity, w *world.World) {
 	trans := w.Transforms[id]
 
 	// Bullets move at high velocities and effectively ignore gravitational curvature
-	if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
+	if tag := w.Tags[id]; tag != nil && tag.Name == "bullet" {
 		return
 	}
 
 	for wellID, well := range w.GravityWells {
-		if well == nil || id == wellID { continue } // Self-gravitation is physically impossible in this model
-		wellTrans, ok := w.Transforms[wellID]
-		if !ok { continue }
+		if well == nil || int(id) == wellID { continue }
+		wellTrans := w.Transforms[wellID]
+		if wellTrans == nil { continue }
 
 		delta := core.VecToWrapped(trans.Position, wellTrans.Position)
 		d := math.Max(10, math.Sqrt(delta.X*delta.X+delta.Y*delta.Y))
 
-		// A dynamic gravity multiplier allows the environment to become increasingly hostile as the narrative progresses
 		multiplier := phys.GravityMultiplier
 		if multiplier <= 0 { multiplier = 1.0 }
 		
-		// Pre-calculating the force-to-distance ratio minimizes redundant division operations in the physics loop
 		fRatio := math.Min(5.0, (well.Mass*500)/(d*d)) * multiplier / d
 
 		phys.Acceleration.X += delta.X * fRatio
 		phys.Acceleration.Y += delta.Y * fRatio
 	}
 }
+
 
 
 func integrate(phys *components.Physics, trans *components.Transform) {
@@ -76,90 +76,251 @@ func integrate(phys *components.Physics, trans *components.Transform) {
 
 
 func handleCollisions(id core.Entity, w *world.World) {
-	trans, okT := w.Transforms[id]
-	phys, okP := w.Physics[id]
-	if !okT || !okP { return }
+
+
+	trans := w.Transforms[id]
+
+
+	phys := w.Physics[id]
+
+
+	if trans == nil || phys == nil { return }
+
+
 	
-	tag, hasTag := w.Tags[id]
+
+
+	tag := w.Tags[id]
+
+
+
+
+
+	// Proximity checks against static geometry maintain high framerates in dense levels
+
 
 	for wallID, wall := range w.Walls {
-		if wall == nil || wall.IsDestroyed { continue }
-		wallTrans, ok := w.Transforms[wallID]
-		if !ok { continue }
 
-		// Wrapped distance calculation ensures that fixed geometry behaves consistently with the toroidal universe
+
+		if wall == nil || wall.IsDestroyed { continue }
+
+
+		wallTrans := w.Transforms[wallID]
+
+
+		if wallTrans == nil { continue }
+
+
+
+
+
+		// Distance checks must account for toroidal wrapping to prevent 'ghosting' through world edges
+
+
 		delta := core.VecToWrapped(trans.Position, wallTrans.Position)
+
+
 		dx, dy := math.Abs(delta.X), math.Abs(delta.Y)
 
+
+
+
+
 		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
-			if hasTag && tag.Name == "bullet" {
+
+
+			if tag != nil && tag.Name == "bullet" {
+
+
 				// Universal ricochets allow bullets to persist in the play area, accelerating the pace of destruction
+
+
 				if dx > dy {
+
+
 					phys.Velocity.X *= -1.0
-					// Positional correction prevents the high-velocity projectile from being trapped inside geometry
+
+
 					if delta.X > 0 { trans.Position.X = wallTrans.Position.X - (5.1 + wall.Size/2) } else { trans.Position.X = wallTrans.Position.X + (5.1 + wall.Size/2) }
+
+
 				} else {
+
+
 					phys.Velocity.Y *= -1.0
+
+
 					if delta.Y > 0 { trans.Position.Y = wallTrans.Position.Y - (5.1 + wall.Size/2) } else { trans.Position.Y = wallTrans.Position.Y + (5.1 + wall.Size/2) }
+
+
 				}
+
+
+
+
 
 				if wall.Destructible {
-					// Surviving the impact allows a single high-energy bullet to trigger multiple shatter events
-					shatterEntity(w, wallID, phys.Velocity)
+
+
+					shatterEntity(w, core.Entity(wallID), phys.Velocity)
+
+
 					w.Audio.Play("boom") 
+
+
 					w.ScreenShake += 4.0
-					w.DestroyEntity(wallID)
+
+
+					w.DestroyEntity(core.Entity(wallID))
+
+
 				} else {
+
+
 					emitImpactFeedback(w, trans.Position)
+
+
 					w.ScreenShake += 1.0
+
+
 				}
+
+
 				return
+
+
 			}
+
+
+
+
 
 			// Inelastic collision response prevents physical bodies from passing through solid data structures
+
+
 			phys.Velocity.X, phys.Velocity.Y = 0, 0
+
+
 		}
+
+
 	}
 
-	// Dynamic entity interaction logic
-	if hasTag && tag.Name == "bullet" {
+
+
+
+
+	// Entity interaction logic supports high-speed combat resolution
+
+
+	if tag != nil && tag.Name == "bullet" {
+
+
 		for specID, specTag := range w.Tags {
-			if specTag.Name != "spectre" { continue }
+
+
+			if specTag == nil || specTag.Name != "spectre" { continue }
+
+
 			
-			if specTrans, okST := w.Transforms[specID]; okST {
-				if specPhys, okSP := w.Physics[specID]; okSP {
-					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-						specPhys.GravityMultiplier += 1.0
-						w.Audio.Play("boom")
-						w.ScreenShake += 8.0
-						
-						// Narrative impact is reinforced by violent red pixel displacement
-						shatterEntity(w, specID, phys.Velocity)
-						
-						w.DestroyEntity(id)
-						return
-					}
+
+
+			specTrans := w.Transforms[specID]
+
+
+			specPhys := w.Physics[specID]
+
+
+			if specTrans != nil && specPhys != nil {
+
+
+				if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+
+
+					// Increasing susceptibility to gravity forces the spectre toward environmental hazards
+
+
+					specPhys.GravityMultiplier += 1.0
+
+
+					w.Audio.Play("boom")
+
+
+					w.ScreenShake += 8.0
+
+
+					shatterEntity(w, core.Entity(specID), phys.Velocity)
+
+
+					w.DestroyEntity(id)
+
+
+					return
+
+
 				}
+
+
 			}
+
+
 		}
+
+
 	}
+
+
 }
 
+
+
+
+
 func shatterEntity(w *world.World, id core.Entity, impactVel core.Vector2) {
+
+
 	// Specialized particle quirks provide a high-fidelity 'Nintendo-grade' destruction feel
-	trans, okT := w.Transforms[id]
-	render, okR := w.Renders[id]
-	if !okT || !okR { return }
+
+
+	trans := w.Transforms[id]
+
+
+	render := w.Renders[id]
+
+
+	if trans == nil || render == nil { return }
+
+
+
+
 
 	// Core explosion with inherited momentum
+
+
 	biasVel := core.Vector2{X: impactVel.X * 0.2, Y: impactVel.Y * 0.2}
+
+
 	spawnDebrisQuirky(w, trans.Position, render.Color, 15, 4.0, biasVel, particles.QuirkStandard)
+
+
 	
+
+
 	// 'Orphaned' data fragments that orbit the blast center create visual complexity
+
+
 	spawnDebrisQuirky(w, trans.Position, color.RGBA{255, 255, 200, 255}, 6, 6.0, biasVel, particles.QuirkOrbit)
+
+
 	
+
+
 	// Flickering sparks simulate energetic discharge
+
+
 	spawnDebrisQuirky(w, trans.Position, render.Color, 10, 3.0, biasVel, particles.QuirkFlicker)
+
+
 }
 
 func emitImpactFeedback(w *world.World, pos core.Vector2) {

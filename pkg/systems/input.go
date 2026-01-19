@@ -13,10 +13,12 @@ import (
 )
 
 func SystemInput(w *world.World) {
-	for e := range w.InputControlleds {
-		phys, okP := w.Physics[e]
-		trans, okT := w.Transforms[e]
-		if !okP || !okT { continue }
+	for e, controlled := range w.InputControlleds {
+		if controlled == nil { continue }
+		
+		phys := w.Physics[e]
+		trans := w.Transforms[e]
+		if phys == nil || trans == nil { continue }
 
 		// Dynamic speed limits enable the 'overdrive' mechanic, providing physical gratification for skill-based timing
 		baseMaxSpeed := 7.5

@@ -12,16 +12,17 @@ import (
 )
 
 func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePos core.Vector2, shake core.Vector2) {
+	// Abstracting level-layer rendering ensures that environmental mechanics (like gravity) are visually prioritized
 	for id, well := range w.GravityWells {
 		if well == nil { continue }
-		trans, ok := w.Transforms[id]
-		if !ok { continue }
+		trans := w.Transforms[id]
+		if trans == nil { continue }
 		
 		pos := core.Vector2{X: trans.Position.X + shake.X, Y: trans.Position.Y + shake.Y}
 		drawGravityWell(screen, pos, well.Radius)
 	}
 
-	// Memory node highlight relies on proximity-based feedback to indicate goal viability
+	// Dynamic goal highlighting provides the primary feedback loop for win-state proximity
 	mc := color.RGBA{200, 200, 255, 100}
 	if core.DistWrapped(spectrePos, lvl.Memory.Position) < core.MemoryRadius {
 		mc = color.RGBA{255, 50, 50, 255}
@@ -32,16 +33,17 @@ func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePo
 }
 
 func drawGravityWell(screen *ebiten.Image, pos core.Vector2, r float64) {
-	// Dual-circle rendering conveys the 'Event Horizon' vs 'Singularity' distinction
+	// A high-contrast 'black hole' aesthetic visually communicates the lethal nature of the singularity
 	DrawWrappedCircle(screen, pos, r, color.RGBA{0, 0, 0, 255}, true)
 	DrawWrappedCircle(screen, pos, r, color.RGBA{100, 0, 100, 255}, false)
 }
 
 func DrawEntities(screen *ebiten.Image, w *world.World, shake core.Vector2) {
+	// Batching draw calls by component presence maintains a predictable visual hierarchy
 	for id, r := range w.Renders {
 		if r == nil || r.Sprite == nil { continue }
-		trans, ok := w.Transforms[id]
-		if !ok { continue }
+		trans := w.Transforms[id]
+		if trans == nil { continue }
 
 		scale := r.Scale
 		if scale == 0 { scale = 1.0 }

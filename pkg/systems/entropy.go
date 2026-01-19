@@ -19,14 +19,16 @@ func SystemEntropy(w *world.World, frostMask *image.RGBA) {
 	}
 
 	for id, trans := range w.Transforms {
-		if w.Renders[id] == nil { continue }
+		if trans == nil { continue }
+		render := w.Renders[id]
+		if render == nil { continue }
 
 		// Coordinate remapping translates world-space motion into low-res texture memory
 		sx := int(trans.Position.X * (float64(core.MistWidth) / core.ScreenWidth))
 		sy := int(trans.Position.Y * (float64(core.MistHeight) / core.ScreenHeight))
 
 		rad := 2
-		if tag, ok := w.Tags[id]; ok && tag.Name == "spectre" {
+		if tag := w.Tags[id]; tag != nil && tag.Name == "spectre" {
 			rad = 3 // Larger trails emphasize the spectre's heavy presence
 		}
 

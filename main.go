@@ -140,45 +140,47 @@ func NewGame() *Game {
 
 	func (g *Game) LoadLevel(idx int) {
 
+	
+
 		if idx >= len(g.Levels) { idx = len(g.Levels) - 1 }
+
+	
 
 		g.CurrentLevel = idx
 
+	
+
 		lvl := g.Levels[idx]
+
+	
 
 		w := g.World
 
 	
 
-		// Total state reset prevents entity leakage and memory bloat between level transitions
+	
 
-		w.Transforms = make(map[core.Entity]*components.Transform)
+	
 
-		w.Physics = make(map[core.Entity]*components.Physics)
+		// Utilizing a centralized reset method ensures that the memory pool is recycled, avoiding GC pressure during transitions
 
-		w.Renders = make(map[core.Entity]*components.Render)
+	
 
-		w.AIs = make(map[core.Entity]*components.AI)
+		w.Reset()
 
-		w.Tags = make(map[core.Entity]*components.Tag)
-
-		w.GravityWells = make(map[core.Entity]*components.GravityWell)
-
-		w.InputControlleds = make(map[core.Entity]*components.InputControlled)
-
-		w.Walls = make(map[core.Entity]*components.Wall)
-
-		w.ProjectileEmitters = make(map[core.Entity]*components.ProjectileEmitter)
-
-		w.Lifetimes = make(map[core.Entity]*components.Lifetime)
-
-		
+	
 
 		w.Particles.Reset()
 
+	
+
 		
 
+	
+
 		g.spawnLevelEntities(lvl)
+
+	
 
 	}
 
@@ -448,15 +450,16 @@ func (g *Game) updateActive() error {
 }
 
 func (g *Game) checkWinCondition(lvl *level.Level) error {
-	pSpec, okS := g.World.Transforms[g.SpectreID]
-	pRun, okR := g.World.Transforms[g.RunnerID]
-	if !okS || !okR { return nil }
+	pSpec := g.World.Transforms[g.SpectreID]
+	pRun := g.World.Transforms[g.RunnerID]
+	if pSpec == nil || pRun == nil { return nil }
 
 	// Spatial proximity check for win condition triggers the 'Reunion' state
 	if core.DistWrapped(pSpec.Position, pRun.Position) < 80 {
 		for id, well := range g.World.GravityWells {
-			wellTrans, ok := g.World.Transforms[id]
-			if !ok || well == nil { continue }
+			if well == nil { continue }
+			wellTrans := g.World.Transforms[id]
+			if wellTrans == nil { continue }
 			
 			// Captured by the singularity: The ultimate endpoint of their shared trajectory
 			if core.DistWrapped(pSpec.Position, wellTrans.Position) < well.Radius + 15 {
@@ -472,6 +475,7 @@ func (g *Game) checkWinCondition(lvl *level.Level) error {
 	}
 	return nil
 }
+
 
 
 
@@ -502,14 +506,14 @@ func (g *Game) drawTransition(screen *ebiten.Image) {
 	// 2. Gravity Well Bloom: Every singularity becomes a source of radiating light
 	for id, well := range g.World.GravityWells {
 		if well == nil { continue }
-		trans, ok := g.World.Transforms[id]
-		if !ok { continue }
+		wellTrans := g.World.Transforms[id]
+		if wellTrans == nil { continue }
 		
-		g.drawBloom(screen, trans.Position, 300.0*t, color.RGBA{255, 255, 200, uint8(200 * (1.0 - t))})
+		g.drawBloom(screen, wellTrans.Position, 300.0*t, color.RGBA{255, 255, 200, uint8(200 * (1.0 - t))})
 		
 		// Central core flare emphasizes the transformation of the trap into a beacon
 		coreAlpha := uint8(200 * t)
-		vector.DrawFilledCircle(screen, float32(trans.Position.X), float32(trans.Position.Y), float32(well.Radius * (1.0 + t*2)), color.RGBA{255, 255, 255, coreAlpha}, true)
+		vector.DrawFilledCircle(screen, float32(wellTrans.Position.X), float32(wellTrans.Position.Y), float32(well.Radius * (1.0 + t*2)), color.RGBA{255, 255, 255, coreAlpha}, true)
 	}
 
 	// 3. Sunshine Pixelizing: A grid-based transition enforces the digital/arcade aesthetic
@@ -551,7 +555,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, shake core.Vector2) {
 	
 	// Safe entity tracking ensures the renderer remains stable even during state transitions
 	spectrePos := core.Vector2{}
-	if trans, ok := g.World.Transforms[g.SpectreID]; ok {
+	if trans := g.World.Transforms[g.SpectreID]; trans != nil {
 		spectrePos = trans.Position
 	}
 	

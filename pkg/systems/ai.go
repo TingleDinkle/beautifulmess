@@ -24,7 +24,7 @@ func InitLua(w *world.World) {
 	// Expose physics manipulation to allow scripts to drive entities
 	L.SetGlobal("apply_force", L.NewFunction(func(L *lua.LState) int {
 		id := getID(L)
-		if phys, ok := w.Physics[id]; ok {
+		if phys := w.Physics[id]; phys != nil {
 			phys.Acceleration.X += float64(L.CheckNumber(2))
 			phys.Acceleration.Y += float64(L.CheckNumber(3))
 		}
@@ -33,7 +33,7 @@ func InitLua(w *world.World) {
 
 	L.SetGlobal("set_max_speed", L.NewFunction(func(L *lua.LState) int {
 		id := getID(L)
-		if phys, ok := w.Physics[id]; ok {
+		if phys := w.Physics[id]; phys != nil {
 			phys.MaxSpeed = float64(L.CheckNumber(2))
 		}
 		return 0
@@ -42,7 +42,7 @@ func InitLua(w *world.World) {
 	L.SetGlobal("rotate", L.NewFunction(func(L *lua.LState) int {
 		id := getID(L)
 		delta := float64(L.CheckNumber(2))
-		if trans, ok := w.Transforms[id]; ok {
+		if trans := w.Transforms[id]; trans != nil {
 			trans.Rotation += delta
 		}
 		return 0
@@ -68,17 +68,13 @@ func InitLua(w *world.World) {
 		tx, ty := float64(L.CheckNumber(2)), float64(L.CheckNumber(3))
 		
 		trans := w.Transforms[id]
-		if trans == nil {
-			return 0
-		}
+		if trans == nil { return 0 }
 		
 		delta := core.VecToWrapped(trans.Position, core.Vector2{X: tx, Y: ty})
 		dx, dy := delta.X, delta.Y
 
 		d := math.Sqrt(dx*dx + dy*dy)
-		if d < 0.01 {
-			d = 0.01
-		}
+		if d < 0.01 { d = 0.01 }
 		L.Push(lua.LNumber(dx / d))
 		L.Push(lua.LNumber(dy / d))
 		L.Push(lua.LNumber(d))
@@ -88,18 +84,17 @@ func InitLua(w *world.World) {
 	L.SetGlobal("get_target", L.NewFunction(func(L *lua.LState) int {
 		id := getID(L)
 		ai := w.AIs[id]
-		if ai == nil {
-			return 0
-		}
+		if ai == nil { return 0 }
 		
 		targetID := core.Entity(ai.TargetID)
-		if trans, ok := w.Transforms[targetID]; ok {
+		if trans := w.Transforms[targetID]; trans != nil {
 			L.Push(lua.LNumber(trans.Position.X))
 			L.Push(lua.LNumber(trans.Position.Y))
 			return 2
 		}
 		return 0
 	}))
+
 
 	L.SetGlobal("get_input_dir", L.NewFunction(func(L *lua.LState) int {
 		// Does not need ID, global input
@@ -149,13 +144,13 @@ func SystemAI(w *world.World, lvl *level.Level) {
 		var bestWellPos core.Vector2
 		foundWell := false
 		
-		pos, ok := w.Transforms[e]
-		if !ok { continue }
+		pos := w.Transforms[e]
+		if pos == nil { continue }
 		
 		for wellID, well := range w.GravityWells {
 			if well == nil { continue }
-			wellTrans, ok := w.Transforms[wellID]
-			if !ok { continue }
+			wellTrans := w.Transforms[wellID]
+			if wellTrans == nil { continue }
 			
 			// Perceived shortest path calculation respects the toroidal nature of the universe
 			delta := core.VecToWrapped(pos.Position, wellTrans.Position)
