@@ -2,6 +2,7 @@ package systems
 
 import (
 	"math"
+	"math/rand"
 
 	"beautifulmess/pkg/components"
 	"beautifulmess/pkg/core"
@@ -90,37 +91,68 @@ func handleCollisions(id core.Entity, w *world.World) {
 		delta := core.VecToWrapped(trans.Position, wallTrans.Position)
 		dx, dy := math.Abs(delta.X), math.Abs(delta.Y)
 
-		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
-			if hasTag && tag.Name == "bullet" {
-				w.DestroyEntity(id)
-				return
-			}
-
-			// Inelastic impact logic simulates realistic data-packet collisions
-			phys.Velocity.X, phys.Velocity.Y = 0, 0
-			if wall.Destructible { wall.IsDestroyed = true }
+		        // AABB collision detection with inelastic response simulates structural impact
+		        if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
+		            if hasTag && tag.Name == "bullet" {
+		                if wall.Destructible {
+		                    // Triggering a shatter event provides a visceral sense of structural failure
+		                    shatterEntity(w, wallID)
+		                    w.Audio.Play("boom") 
+		                    w.ScreenShake += 4.0
+		                    wall.IsDestroyed = true
+		                }
+		                w.DestroyEntity(id)
+		                return
+		            }
+		
+		            // Inelastic collision response prevents entities from passing through solid data structures
+		            phys.Velocity.X, phys.Velocity.Y = 0, 0
+		        }
+		    }
+		
+		    // Dynamic entity interaction logic
+		    if hasTag && tag.Name == "bullet" {
+		        for specID, specTag := range w.Tags {
+		            if specTag.Name != "spectre" { continue }
+		            
+		            if specTrans, okST := w.Transforms[specID]; okST {
+		                if specPhys, okSP := w.Physics[specID]; okSP {
+		                    if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+		                        // Absorbing high-velocity projectiles significantly increases local mass-susceptibility
+		                        specPhys.GravityMultiplier += 1.0
+		                        w.Audio.Play("boom")
+		                        w.ScreenShake += 8.0
+		                        
+		                        // Spectre shattering (visual only) reinforces the impact weight
+		                        shatterEntity(w, specID)
+		                        
+		                        w.DestroyEntity(id)
+		                        return
+		                    }
+		                }
+		            }
+		        }
+		    }
 		}
-	}
-
-	// High-priority entity interactions are processed separately to allow complex behaviors
-	if hasTag && tag.Name == "bullet" {
-		for specID, specTag := range w.Tags {
-			if specTag.Name != "spectre" { continue }
-			
-			if specTrans, okST := w.Transforms[specID]; okST {
-				if specPhys, okSP := w.Physics[specID]; okSP {
-					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-						// Absorbing high-velocity projectiles significantly increases local mass-susceptibility
-						specPhys.GravityMultiplier += 1.0
-						w.Audio.Play("boom")
-						w.ScreenShake += 8.0
-						w.DestroyEntity(id)
-						return
-					}
-				}
-			}
+		
+		func shatterEntity(w *world.World, id core.Entity) {
+		    // A particle-burst 'destruction engine' translates entity removal into an aesthetic event
+		    trans, okT := w.Transforms[id]
+		    render, okR := w.Renders[id]
+		    if !okT || !okR { return }
+		
+		    numParticles := 15
+		    for i := 0; i < numParticles; i++ {
+		        // Random velocity vectors simulate the chaotic dispersal of fragments
+		        angle := rand.Float64() * 2 * math.Pi
+		        speed := rand.Float64() * 4.0
+		        
+		        w.Particles.Emit(
+		            trans.Position,
+		            core.Vector2{X: math.Cos(angle) * speed, Y: math.Sin(angle) * speed},
+		            render.Color,
+		            0.02 + rand.Float64()*0.03, // Variable decay adds depth to the debris field
+		        )
+		    }
 		}
-	}
-}
-
 
