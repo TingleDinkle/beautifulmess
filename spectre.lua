@@ -28,11 +28,6 @@ function spectre.update_state(id, mem_x, mem_y, mem_radius, well_x, well_y)
     if current_state ~= STATE_SPRINT then stamina = stamina + 0.5 end
     if stamina > max_stamina then stamina = max_stamina end
 
-    -- Ambient Hum (Dissonant presence)
-    if math.random() < 0.005 then
-        play_sound("spectre_hum")
-    end
-    
     -- Logic: Fleeing
     if dist < 150 and current_state == STATE_CRUISE then
         if stamina > 30 then

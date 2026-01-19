@@ -14,6 +14,9 @@ import (
 func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePos core.Vector2) {
 
 	for id, well := range w.GravityWells {
+		if well == nil {
+			continue
+		}
 
 		trans := w.Transforms[id]
 
@@ -51,13 +54,16 @@ func DrawEntities(screen *ebiten.Image, w *world.World) {
 
 	for id, r := range w.Renders {
 
-		if r.Sprite == nil {
+		if r == nil || r.Sprite == nil {
 
 			continue
 
 		}
 
 		trans := w.Transforms[id]
+		if trans == nil {
+			continue
+		}
 
 		scale := r.Scale
 		if scale == 0 {

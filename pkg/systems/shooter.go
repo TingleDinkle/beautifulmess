@@ -49,18 +49,13 @@ func SystemProjectileEmitter(w *world.World) {
 				Friction: 1.0, 
 			}
 
-			w.GravityWells[bulletID] = &components.GravityWell{
-				Mass:   300,
-				Radius: 40,
-			}
-
 			w.Renders[bulletID] = &components.Render{
 				Sprite: generateBulletSprite(),
 				Color:  color.RGBA{255, 255, 255, 255},
-				Scale:  1.0,
+				Scale:  0.5,
 			}
 			
-			// Add Tag to identify it? Not required but useful.
+			// Add Tag to identify it
 			w.Tags[bulletID] = &components.Tag{Name: "bullet"}
 		}
 	}
@@ -68,13 +63,6 @@ func SystemProjectileEmitter(w *world.World) {
 
 func generateBulletSprite() *ebiten.Image {
 	img := ebiten.NewImage(8, 8)
-	img.Fill(color.RGBA{255, 50, 50, 255}) // Reddish outline
-	
-	// Fill center black
-	for y := 1; y < 7; y++ {
-		for x := 1; x < 7; x++ {
-			img.Set(x, y, color.Black)
-		}
-	}
+	img.Fill(color.White) // Simple white square
 	return img
 }
