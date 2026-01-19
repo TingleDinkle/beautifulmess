@@ -20,6 +20,9 @@ func SystemProjectileEmitter(w *world.World) {
 			emitter.LastTime = now
 
 			w.Audio.Play("shoot")
+			
+			// Juice: Screen Shake
+			w.ScreenShake += 2.0
 
 			shooterTrans := w.Transforms[id]
 			if shooterTrans == nil {
@@ -29,6 +32,13 @@ func SystemProjectileEmitter(w *world.World) {
 			// Spawn Entity: Create a "Gravity Well Bullet" at Position + ForwardVector * 20
 			dirX := math.Cos(shooterTrans.Rotation)
 			dirY := math.Sin(shooterTrans.Rotation)
+			
+			// Juice: Recoil
+			// Apply reverse force to shooter if physics exist
+			if shooterPhys, ok := w.Physics[id]; ok {
+				shooterPhys.Velocity.X -= dirX * 1.5
+				shooterPhys.Velocity.Y -= dirY * 1.5
+			}
 
 			spawnPos := core.Vector2{
 				X: shooterTrans.Position.X + dirX*20,

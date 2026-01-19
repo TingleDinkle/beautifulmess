@@ -16,6 +16,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -79,6 +80,9 @@ type Game struct {
 	SpriteRunner  *ebiten.Image
 
 	StartTime time.Time
+	
+	// Game Feel "Juice"
+	HitStop     float64 // Timer in seconds
 }
 
 // ======================================================================================
@@ -128,14 +132,21 @@ func (g *Game) LoadLevel(idx int) {
 	g.CurrentLevel = idx
 	lvl := g.Levels[idx]
 	w := g.World
-	// Reset physics and logic states
+	// Reset ALL entity components to clear previous level artifacts
+	w.Transforms = make(map[core.Entity]*components.Transform)
 	w.Physics = make(map[core.Entity]*components.Physics)
+	w.Renders = make(map[core.Entity]*components.Render)
+	w.AIs = make(map[core.Entity]*components.AI)
+	w.Tags = make(map[core.Entity]*components.Tag)
 	w.GravityWells = make(map[core.Entity]*components.GravityWell)
 	w.InputControlleds = make(map[core.Entity]*components.InputControlled)
 	w.Walls = make(map[core.Entity]*components.Wall)
 	w.ProjectileEmitters = make(map[core.Entity]*components.ProjectileEmitter)
 	w.Lifetimes = make(map[core.Entity]*components.Lifetime)
-
+	
+	// Clear Particles
+	w.Particles.Reset()
+	
 	// Spawn Gravity Wells
 	for _, well := range lvl.Wells {
 		id := w.CreateEntity()
@@ -173,20 +184,12 @@ func (g *Game) LoadLevel(idx int) {
 	w.AIs[g.SpectreID].TargetID = int(g.RunnerID)
 	w.AIs[g.RunnerID].TargetID = int(g.SpectreID)
 	
-	// Spawn Walls (Hardcoded Map)
-	for _, y := range []float64{74, 84, 94} {
-		spawnWall(w, 44, y, true)
-		spawnWall(w, 74, y, true)
-	}
-	// Add a few more blocks to simulate the corner map
-	for x := 44.0; x < 200.0; x += 10 {
-		spawnWall(w, x, 20, false)
-		spawnWall(w, x, 700, false)
-	}
-	for y := 20.0; y < 700.0; y += 10 {
-		spawnWall(w, 20, y, false)
-		spawnWall(w, 1260, y, false)
-	}
+	g.generateMap(w)
+}
+
+func (g *Game) generateMap(w *world.World) {
+	// Map generation disabled per user request.
+	// Returning to empty/boundless void.
 }
 
 func spawnWall(w *world.World, x, y float64, destructible bool) {
@@ -197,18 +200,31 @@ func spawnWall(w *world.World, x, y float64, destructible bool) {
 		Destructible: destructible,
 	}
 	
-	// Create visual for wall
+	// Create visual for wall: Solid Neon Line Segment
 	img := ebiten.NewImage(10, 10)
-	c := color.RGBA{100, 100, 100, 255}
+	
 	if destructible {
-		c = color.RGBA{150, 100, 50, 255}
+		// Destructible: Orange "Data Block"
+		// A slightly smaller block to look less permanent
+		c := color.RGBA{255, 150, 50, 255}
+		img.Fill(color.Transparent)
+		// Draw a centered box 8x8
+		for py := 1; py < 9; py++ {
+			for px := 1; px < 9; px++ {
+				img.Set(px, py, c)
+			}
+		}
+	} else {
+		// Indestructible: Pure Neon Blue Block
+		// When placed in a row, these merge into a seamless line.
+		c := color.RGBA{0, 255, 255, 255} // Cyan/Neon Blue
+		img.Fill(c)
 	}
-	img.Fill(c)
 	
 	w.Renders[id] = &components.Render{
 		Sprite: img,
-		Color: c,
-		Scale: 1.0,
+		Color:  color.RGBA{255, 255, 255, 255},
+		Scale:  1.0,
 	}
 }
 
@@ -291,8 +307,19 @@ func generateCyberSprite() *ebiten.Image {
 // ======================================================================================
 
 func (g *Game) Update() error {
+	// Manual Pause Toggle
+	if inpututil.IsKeyJustPressed(ebiten.KeyP) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.IsPaused = !g.IsPaused
+		// If manually pausing, ensure no Popup is set (unless we want to keep it)
+		// If we unpause, clear popup
+		if !g.IsPaused {
+			g.Popup = nil
+		}
+	}
+
 	if g.IsPaused {
-		if ebiten.IsKeyPressed(ebiten.KeySpace) {
+		// Allow unpausing via Space if it was a story popup, or P/Esc handled above
+		if g.Popup != nil && ebiten.IsKeyPressed(ebiten.KeySpace) {
 			g.IsPaused = false
 			g.Popup = nil
 			g.LoadLevel(g.CurrentLevel + 1)
@@ -301,6 +328,21 @@ func (g *Game) Update() error {
 	}
 
 	// Tick Systems
+	
+	// Game Feel: HitStop
+	if g.HitStop > 0 {
+		g.HitStop -= 1.0 / 60.0
+		// Shake decay
+		g.World.ScreenShake *= 0.9
+		// Render visuals but skip physics/logic updates
+		g.World.Particles.Update() 
+		return nil
+	}
+	
+	// Game Feel: Shake Decay during normal play
+	g.World.ScreenShake *= 0.9
+	if g.World.ScreenShake < 0.5 { g.World.ScreenShake = 0 }
+
 	lvl := &g.Levels[g.CurrentLevel] // Pass pointer to current level
 	systems.SystemInput(g.World)
 	systems.SystemAI(g.World, lvl)
@@ -329,7 +371,14 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	// Draw Nebula (Shader)
+	// Game Feel: Screen Shake
+	shake := core.Vector2{}
+	if g.World.ScreenShake > 0 {
+		shake.X = (rand.Float64() - 0.5) * g.World.ScreenShake * 2 // Multiplier already high enough if value is 5-10
+		shake.Y = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
+	}
+	
+	// Draw Nebula (Shader) - Background usually doesn't shake or shakes differently (parallax). Let's keep it static.
 	w, h := screen.Size()
 	t := float32(time.Since(g.StartTime).Seconds())
 	op := &ebiten.DrawRectShaderOptions{}
@@ -341,7 +390,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// Draw Gravity Wells (Black Holes)
 	lvl := &g.Levels[g.CurrentLevel]
-	systems.DrawLevel(screen, g.World, lvl, g.World.Transforms[g.SpectreID].Position)
+	systems.DrawLevel(screen, g.World, lvl, g.World.Transforms[g.SpectreID].Position, shake)
 
 	// Draw Mist Layer
 	g.FrostImg.WritePixels(g.FrostMask.Pix)
@@ -350,52 +399,75 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(g.FrostImg, mistOp)
 
 	// Draw Entities
-	systems.DrawEntities(screen, g.World)
+	systems.DrawEntities(screen, g.World, shake)
 
 	// 5. Draw UI Modal
-	if g.IsPaused && g.Popup != nil {
-		// Animation: Pop in
-		dt := float64(time.Since(g.PopupTime).Seconds())
-		scale := dt * 5.0
-		if scale > 1.0 {
-			scale = 1.0
-		}
-		// Elastic bounce
-		scale = scale * (1.0 + 0.3*(1.0-scale))
+	if g.IsPaused {
+		// Calculate Center
+		cx, cy := float32(core.ScreenWidth/2), float32(core.ScreenHeight/2)
 
-		bx, by := 300.0, 200.0
-		bw, bh := 680.0, 320.0
-		
-		// Apply scale from center
-		cx, cy := bx+bw/2, by+bh/2
-		bw *= scale
-		bh *= scale
-		bx = cx - bw/2
-		by = cy - bh/2
-
-		// Modal Background
-		vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 240}, false)
-
-		// Border
-		vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
-
-		if scale > 0.9 {
-			// Photo Placeholder (Static Noise)
-			photoW, photoH := 300.0, 200.0
-			px, py := bx+(bw-photoW)/2, by+40
-			for i := 0; i < 100; i++ {
-				rx := rand.Float64() * photoW
-				ry := rand.Float64() * photoH
-				rw := rand.Float64() * 20
-				c := uint8(rand.Intn(255))
-				vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rw), 2, color.RGBA{c, c, c, 255}, false)
+		if g.Popup != nil {
+			// Story Popup (Keep existing logic or style it?)
+			// Keeping existing "Memory Node" style but maybe tweaking colors?
+			// ... (Existing code omitted for brevity, assuming we wrap this block or just handle the ELSE for manual pause)
+			
+			// Animation: Pop in
+			dt := float64(time.Since(g.PopupTime).Seconds())
+			scale := dt * 5.0
+			if scale > 1.0 {
+				scale = 1.0
 			}
-			vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
+			scale = scale * (1.0 + 0.3*(1.0-scale))
 
-			// Text
-			ebitenutil.DebugPrintAt(screen, "[ MEMORY CORRUPTED ]", int(px)+20, int(py)+int(photoH)/2)
-			ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+260)
-			ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+290)
+			bx, by := 300.0, 200.0
+			bw, bh := 680.0, 320.0
+			
+			// Apply scale
+			cxModal, cyModal := bx+bw/2, by+bh/2
+			bw *= scale
+			bh *= scale
+			bx = cxModal - bw/2
+			by = cyModal - bh/2
+
+			vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 240}, false)
+			vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
+
+			if scale > 0.9 {
+				// Text
+				ebitenutil.DebugPrintAt(screen, "[ MEMORY CORRUPTED ]", int(bx)+30, int(by)+260)
+				ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+280)
+				ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+300)
+			}
+		} else {
+			// Manual Pause - Retro Pacman Style
+			
+			// Dim background
+			vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
+			
+			bw, bh := 400.0, 120.0
+			bx := float64(cx) - bw/2
+			by := float64(cy) - bh/2
+			
+			pacBlue := color.RGBA{33, 33, 255, 255}
+			pacYellow := color.RGBA{255, 255, 0, 255}
+
+			// Clean Grid Border
+			vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 2, pacBlue, false)
+			
+			// "PAUSED" Text in Yellow
+			// Since DebugPrint is always white, we can't easily change it without a font.
+			// However, we can draw a yellow rect behind it or just use white and accent it.
+			// Let's draw a yellow bar and put black text? 
+			// No, let's just stick to the iconic white debug text but surround it with yellow pellets.
+			
+			ebitenutil.DebugPrintAt(screen, "--- PAUSED ---", int(bx)+145, int(by)+40)
+			ebitenutil.DebugPrintAt(screen, "RESUME: PRESS P", int(bx)+145, int(by)+70)
+			
+			// Draw simple yellow "Pellet" grid in background or corners
+			for px := 0; px < 5; px++ {
+				vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+15, 2, pacYellow, true)
+				vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+float32(bh)-15, 2, pacYellow, true)
+			}
 		}
 	}
 }

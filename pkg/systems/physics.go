@@ -124,15 +124,14 @@ func SystemPhysics(w *world.World) {
 					if specTrans != nil && specPhys != nil {
 						dist := core.DistWrapped(trans.Position, specTrans.Position)
 						if dist < 20 { 
-							specPhys.GravityMultiplier += 0.5 
-							w.Audio.Play("boom") 
+														// Increase Spectre's GravityMultiplier
+														specPhys.GravityMultiplier += 0.5 
+														w.Audio.Play("boom") // Or distinct hit sound
+														
+														// Juice: Screen Shake
+														w.ScreenShake += 8.0
 							
-							delete(w.Physics, id)
-							delete(w.Renders, id)
-							delete(w.Transforms, id)
-							delete(w.Tags, id)
-							return // Stop processing this entity
-						}
+														delete(w.Physics, id)						}
 					}
 				}
 			}

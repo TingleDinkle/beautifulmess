@@ -24,6 +24,8 @@ type World struct {
 	Particles *particles.ParticleSystem
 	Audio     *audio.AudioSystem
 	
+	ScreenShake float64
+	
 	LState     *lua.LState
 	nextID     core.Entity
 }

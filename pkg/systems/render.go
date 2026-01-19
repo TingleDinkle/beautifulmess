@@ -11,7 +11,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePos core.Vector2) {
+func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePos core.Vector2, shake core.Vector2) {
 
 	for id, well := range w.GravityWells {
 		if well == nil {
@@ -25,10 +25,14 @@ func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePo
 			continue
 
 		}
+		
+		pos := trans.Position
+		pos.X += shake.X
+		pos.Y += shake.Y
 
-		DrawWrappedCircle(screen, trans.Position, well.Radius, color.RGBA{0, 0, 0, 255}, true)
+		DrawWrappedCircle(screen, pos, well.Radius, color.RGBA{0, 0, 0, 255}, true)
 
-		DrawWrappedCircle(screen, trans.Position, well.Radius, color.RGBA{100, 0, 100, 255}, false)
+		DrawWrappedCircle(screen, pos, well.Radius, color.RGBA{100, 0, 100, 255}, false)
 
 	}
 
@@ -43,14 +47,18 @@ func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePo
 		mc = color.RGBA{255, 50, 50, 255}
 
 	}
+	
+	memPos := lvl.Memory.Position
+	memPos.X += shake.X
+	memPos.Y += shake.Y
 
-	DrawWrappedCircle(screen, lvl.Memory.Position, core.MemoryRadius, mc, false)
+	DrawWrappedCircle(screen, memPos, core.MemoryRadius, mc, false)
 
 }
 
 
 
-func DrawEntities(screen *ebiten.Image, w *world.World) {
+func DrawEntities(screen *ebiten.Image, w *world.World, shake core.Vector2) {
 
 	for id, r := range w.Renders {
 
@@ -69,8 +77,12 @@ func DrawEntities(screen *ebiten.Image, w *world.World) {
 		if scale == 0 {
 			scale = 1.0
 		}
+		
+		pos := trans.Position
+		pos.X += shake.X
+		pos.Y += shake.Y
 
-		DrawWrappedSprite(screen, r.Sprite, trans.Position, trans.Rotation, scale, r.Color)
+		DrawWrappedSprite(screen, r.Sprite, pos, trans.Rotation, scale, r.Color)
 
 	}
 

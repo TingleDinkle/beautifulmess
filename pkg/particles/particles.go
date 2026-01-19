@@ -29,6 +29,10 @@ func NewParticleSystem() *ParticleSystem {
 	}
 }
 
+func (ps *ParticleSystem) Reset() {
+	ps.particles = ps.particles[:0]
+}
+
 func (ps *ParticleSystem) Emit(pos core.Vector2, vel core.Vector2, col color.RGBA, decay float64) {
 	ps.particles = append(ps.particles, &Particle{
 		Position: pos,
