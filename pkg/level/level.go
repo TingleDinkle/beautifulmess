@@ -16,6 +16,7 @@ type MemoryNode struct {
 	Title       string
 	Description string
 	Color       color.RGBA
+	Photos      []string
 }
 
 type Level struct {
@@ -37,9 +38,9 @@ func InitLevels() []Level {
 			Memory: MemoryNode{
 				Position:    core.Vector2{X: 640, Y: 360},
 				Title:       "The Singularity",
-				Description: `We were crushed together.
-Finally one.`,
+				Description: "We were crushed together.\nFinally one.\nBut the pressure was too much.",
 				Color:       color.RGBA{100, 100, 255, 255},
+				Photos:      []string{"photo1_1", "photo1_2"},
 			},
 			StartP1: core.Vector2{X: 100, Y: 360},
 			StartP2: core.Vector2{X: 1100, Y: 360},
@@ -55,8 +56,9 @@ Finally one.`,
 			Memory: MemoryNode{
 				Position:    core.Vector2{X: 300, Y: 360},
 				Title:       "Orbit Decay",
-				Description: "Spinning until we crash.",
+				Description: "Spinning until we crash.\nRound and round we go.\nWhere we stop, nobody knows.",
 				Color:       color.RGBA{255, 50, 50, 255},
+				Photos:      []string{"photo2_1", "photo2_2", "photo2_3"},
 			},
 			StartP1: core.Vector2{X: 640, Y: 600},
 			StartP2: core.Vector2{X: 640, Y: 100},

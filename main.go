@@ -71,6 +71,7 @@ type Game struct {
 	IsPaused     bool
 	Popup        *level.MemoryNode
 	PopupTime    time.Time
+	PopupPhotoIndex int
 
 	// Graphics Assets
 	FrostMask     *image.RGBA
@@ -406,40 +407,73 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		// Calculate Center
 		cx, cy := float32(core.ScreenWidth/2), float32(core.ScreenHeight/2)
 
-		if g.Popup != nil {
-			// Story Popup (Keep existing logic or style it?)
-			// Keeping existing "Memory Node" style but maybe tweaking colors?
-			// ... (Existing code omitted for brevity, assuming we wrap this block or just handle the ELSE for manual pause)
-			
-			// Animation: Pop in
-			dt := float64(time.Since(g.PopupTime).Seconds())
-			scale := dt * 5.0
-			if scale > 1.0 {
-				scale = 1.0
-			}
-			scale = scale * (1.0 + 0.3*(1.0-scale))
-
-			bx, by := 300.0, 200.0
-			bw, bh := 680.0, 320.0
-			
-			// Apply scale
-			cxModal, cyModal := bx+bw/2, by+bh/2
-			bw *= scale
-			bh *= scale
-			bx = cxModal - bw/2
-			by = cyModal - bh/2
-
-			vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 240}, false)
-			vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
-
-			if scale > 0.9 {
-				// Text
-				ebitenutil.DebugPrintAt(screen, "[ MEMORY CORRUPTED ]", int(bx)+30, int(by)+260)
-				ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+280)
-				ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+300)
-			}
-		} else {
-			// Manual Pause - Retro Pacman Style
+					if g.Popup != nil {
+						// Story Popup
+						dt := float64(time.Since(g.PopupTime).Seconds())
+						scale := dt * 5.0
+						if scale > 1.0 { scale = 1.0 }
+						scale = scale * (1.0 + 0.3*(1.0-scale))
+		
+						// Larger box for Photos
+						bx, by := 300.0, 100.0
+						bw, bh := 680.0, 500.0
+						
+						// Apply scale
+						cxModal, cyModal := bx+bw/2, by+bh/2
+						bw *= scale
+						bh *= scale
+						bx = cxModal - bw/2
+						by = cyModal - bh/2
+		
+						// Modal Background
+						vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 245}, false)
+						vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
+		
+						if scale > 0.9 {
+							// Title
+							ebitenutil.DebugPrintAt(screen, "[ MEMORY FRAGMENT ]", int(bx)+280, int(by)+20)
+							ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+50);
+		
+							// Photo Area
+							photoW, photoH := 400.0, 300.0
+							px, py := bx+(bw-photoW)/2, by+80
+							
+							// Placeholder Photo Art (seeded by index)
+							// We use the index to change the color/pattern to show navigation works
+							seed := int64(g.PopupPhotoIndex * 100)
+							rng := rand.New(rand.NewSource(time.Now().UnixNano() + seed))
+							
+							for i := 0; i < 200; i++ {
+								rx := rng.Float64() * photoW
+								ry := rng.Float64() * photoH
+								rw := rng.Float64() * 30
+													c := uint8(rng.Intn(255))
+													// Tint based on index
+													cr, cg, cb := c, c, c
+													if g.PopupPhotoIndex == 0 { cr = 255; cg = c/2; cb = c/2 } // Reddish
+													if g.PopupPhotoIndex == 1 { cr = c/2; cg = 255; cb = c/2 } // Greenish
+													if g.PopupPhotoIndex == 2 { cr = c/2; cg = c/2; cb = 255 } // Bluish
+													
+													vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rw), 2, color.RGBA{uint8(cr), uint8(cg), uint8(cb), 255}, false)							}
+							vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
+		
+							// Navigation Arrows
+							if len(g.Popup.Photos) > 1 {
+								// Left Arrow
+								ebitenutil.DebugPrintAt(screen, "< PREV (A)", int(px)-80, int(py)+int(photoH)/2)
+								// Right Arrow
+								ebitenutil.DebugPrintAt(screen, "(D) NEXT >", int(px)+int(photoW)+10, int(py)+int(photoH)/2)
+								
+								// Photo Counter
+								ebitenutil.DebugPrintAt(screen, "IMG "+string(rune('1'+g.PopupPhotoIndex))+"/"+string(rune('1'+len(g.Popup.Photos)-1)), int(px)+int(photoW)-60, int(py)+int(photoH)+10)
+							}
+		
+							// Description
+							ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+400)
+							
+							ebitenutil.DebugPrintAt(screen, "[ SPACE TO RECOVER ]", int(bx)+260, int(by)+470)
+						}
+					} else {			// Manual Pause - Retro Pacman Style
 			
 			// Dim background
 			vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
