@@ -80,10 +80,13 @@ type Game struct {
 	TargetLevel     int
 	ReunionPoint    core.Vector2
 
-	// Graphics Assets
+	// Pre-allocated resources prevent GC stutters during the hot gameplay loop
 	FrostMask     *image.RGBA
 	FrostImg      *ebiten.Image
 	NebulaShader  *ebiten.Shader
+	ShaderOptions ebiten.DrawRectShaderOptions 
+	PopupRNG      *rand.Rand
+
 	SpriteSpectre *ebiten.Image
 	SpriteRunner  *ebiten.Image
 
@@ -111,6 +114,10 @@ func NewGame() *Game {
 		Levels:        level.InitLevels(),
 		FrostMask:     image.NewRGBA(image.Rect(0, 0, core.MistWidth, core.MistHeight)),
 		NebulaShader:  s,
+		ShaderOptions: ebiten.DrawRectShaderOptions{
+			Uniforms: make(map[string]interface{}),
+		},
+		PopupRNG:      rand.New(rand.NewSource(0)),
 		StartTime:     time.Now(),
 		SpriteSpectre: generateGothicSprite(),
 	}
@@ -135,6 +142,7 @@ func NewGame() *Game {
 		return g
 
 	}
+
 
 	
 
@@ -274,6 +282,7 @@ func NewGame() *Game {
 
 	func spawnWall(w *world.World, x, y float64, destructible bool) {
 	id := w.CreateEntity()
+	w.AddToActiveWalls(id) // Explicit tracking of static geometry optimizes the collision pipeline
 	w.Transforms[id] = &components.Transform{Position: core.Vector2{X: x, Y: y}}
 	w.Walls[id] = &components.Wall{
 		Size: 10,
@@ -568,9 +577,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, shake core.Vector2) {
 func (g *Game) drawBackground(screen *ebiten.Image) {
 	w, h := screen.Size()
 	t := float32(time.Since(g.StartTime).Seconds())
-	op := &ebiten.DrawRectShaderOptions{}
-	op.Uniforms = map[string]interface{}{"Cursor": []float32{0, 0, t}}
-	screen.DrawRectShader(w, h, g.NebulaShader, op)
+	// Reusing the uniform map avoids per-frame map allocations and reduces memory pressure
+	g.ShaderOptions.Uniforms["Cursor"] = []float32{0, 0, t}
+	screen.DrawRectShader(w, h, g.NebulaShader, &g.ShaderOptions)
 }
 
 func (g *Game) drawMist(screen *ebiten.Image) {
@@ -619,18 +628,19 @@ func (g *Game) renderPopupContent(screen *ebiten.Image, bx, by, bw, bh float64) 
 	photoW, photoH := 400.0, 300.0
 	px, py := bx+(bw-photoW)/2, by+80
 	
-	// Dynamic noise pattern acts as a placeholder for fragmented visual data
-	seed := int64(g.PopupPhotoIndex * 100)
-	rng := rand.New(rand.NewSource(time.Now().UnixNano() + seed))
+	// Resetting the pre-allocated RNG maintains stochastic visual consistency without heap churn
+	g.PopupRNG.Seed(int64(g.PopupPhotoIndex * 100))
 	for i := 0; i < 200; i++ {
-		rx, ry := rng.Float64()*photoW, rng.Float64()*photoH
-		c := uint8(rng.Intn(255))
+		rx, ry := g.PopupRNG.Float64()*photoW, g.PopupRNG.Float64()*photoH
+		c := uint8(g.PopupRNG.Intn(255))
 		cr, cg, cb := c, c, c
 		// Visual tinting provides immediate feedback for pagination state
 		if g.PopupPhotoIndex == 0 { cr = 255; cg /= 2; cb /= 2 }
 		if g.PopupPhotoIndex == 1 { cr /= 2; cg = 255; cb /= 2 }
 		if g.PopupPhotoIndex == 2 { cr /= 2; cg /= 2; cb = 255 }
-		vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rng.Float64()*30), 2, color.RGBA{cr, cg, cb, 255}, false)
+		
+		// Stochastic rendering simulates the reconstruction of lost packet data
+		vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(g.PopupRNG.Float64()*30), 2, color.RGBA{cr, cg, cb, 255}, false)
 	}
 	vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
 

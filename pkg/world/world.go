@@ -10,7 +10,7 @@ import (
 )
 
 type World struct {
-	// Slices replace maps to provide cache-aligned, contiguous memory access, which is critical for high-performance ECS architectures
+	// Slices replace maps to provide cache-aligned, contiguous memory access
 	Transforms       []*components.Transform
 	Physics          []*components.Physics
 	Renders          []*components.Render
@@ -22,6 +22,10 @@ type World struct {
 	ProjectileEmitters []*components.ProjectileEmitter
 	Lifetimes        []*components.Lifetime
 	
+	// Active lists allow systems to skip empty 'nil' slots in component slices, maximizing CPU throughput
+	ActiveEntities []core.Entity 
+	ActiveWalls    []core.Entity
+
 	Particles *particles.ParticleSystem
 	Audio     *audio.AudioSystem
 	
@@ -36,13 +40,12 @@ func NewWorld() *World {
 		Audio:     audio.NewAudioSystem(),
 		LState:    lua.NewState(),
 	}
-	// Pre-allocating capacity reduces the frequency of heap re-allocations during the initial entity burst
 	w.Reset()
 	return w
 }
 
 func (w *World) Reset() {
-	// Truncating slices while retaining underlying capacity allows for zero-allocation level resets
+	// Truncating while keeping capacity minimizes future heap allocations
 	w.Transforms = w.Transforms[:0]
 	w.Physics = w.Physics[:0]
 	w.Renders = w.Renders[:0]
@@ -54,16 +57,17 @@ func (w *World) Reset() {
 	w.ProjectileEmitters = w.ProjectileEmitters[:0]
 	w.Lifetimes = w.Lifetimes[:0]
 	
+	w.ActiveEntities = w.ActiveEntities[:0]
+	w.ActiveWalls = w.ActiveWalls[:0]
+	
 	w.nextID = 0
 	w.ScreenShake = 0
 }
 
 func (w *World) CreateEntity() core.Entity {
-	// Entity IDs map directly to slice indices, providing the fastest possible component lookup path
 	id := w.nextID
 	w.nextID++
 	
-	// Growing all slices in tandem maintains a uniform data-structure width
 	w.Transforms = append(w.Transforms, nil)
 	w.Physics = append(w.Physics, nil)
 	w.Renders = append(w.Renders, nil)
@@ -75,11 +79,16 @@ func (w *World) CreateEntity() core.Entity {
 	w.ProjectileEmitters = append(w.ProjectileEmitters, nil)
 	w.Lifetimes = append(w.Lifetimes, nil)
 	
+	w.ActiveEntities = append(w.ActiveEntities, id)
 	return id
 }
 
+func (w *World) AddToActiveWalls(id core.Entity) {
+	// Specialized lists for static geometry optimize collision and rendering subsystems
+	w.ActiveWalls = append(w.ActiveWalls, id)
+}
+
 func (w *World) DestroyEntity(id core.Entity) {
-	// Nullifying entries instead of resizing slices preserves the index-to-ID mapping stability
 	idx := int(id)
 	if idx >= len(w.Transforms) { return }
 	
@@ -93,7 +102,24 @@ func (w *World) DestroyEntity(id core.Entity) {
 	w.Walls[idx] = nil
 	w.ProjectileEmitters[idx] = nil
 	w.Lifetimes[idx] = nil
+
+	// Removal from active lists prevents systems from visiting nullified component slots
+	for i, eid := range w.ActiveEntities {
+		if eid == id {
+			w.ActiveEntities[i] = w.ActiveEntities[len(w.ActiveEntities)-1]
+			w.ActiveEntities = w.ActiveEntities[:len(w.ActiveEntities)-1]
+			break
+		}
+	}
+	for i, eid := range w.ActiveWalls {
+		if eid == id {
+			w.ActiveWalls[i] = w.ActiveWalls[len(w.ActiveWalls)-1]
+			w.ActiveWalls = w.ActiveWalls[:len(w.ActiveWalls)-1]
+			break
+		}
+	}
 }
+
 
 
 
