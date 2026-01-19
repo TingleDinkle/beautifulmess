@@ -4,9 +4,10 @@ package core
 const (
 	ScreenWidth   = 1280
 	ScreenHeight  = 720
+	TimeStep      = 1.0 / 60.0 // Fixed delta-time ensures deterministic physics across hardware
 	EntitySize    = 8.0
-	MemoryRadius  = 70.0 // The size of the "Trap" / "Goal"
-	MistWidth     = 320  // Low-res buffer for that retro feel
+	MemoryRadius  = 70.0
+	MistWidth     = 320
 	MistHeight    = 180
 )
 

@@ -92,6 +92,7 @@ type Game struct {
 // ======================================================================================
 
 func NewGame() *Game {
+	// A predictable but varied seed ensures unique level layouts across different sessions
 	rand.Seed(time.Now().UnixNano())
 
 	s, err := ebiten.NewShader(shaderNebula)
@@ -108,93 +109,146 @@ func NewGame() *Game {
 		SpriteSpectre: generateGothicSprite(),
 	}
 
-	// Load Assets
 	g.SpriteRunner = generateAstroSprite()
 	
+	// Pre-loading audio samples avoids frame-stuttering during combat
 	g.World.Audio.LoadFile("shoot", "assets/shoot.wav")
 	g.World.Audio.LoadFile("boom", "assets/boom.wav")
 
-	// Initialize frost mask with base color to avoid initial transparency artifacts
+	// Base color initialization prevents flickering before the first entropy cycle
 	c := color.RGBA{10, 5, 20, 240}
 	for i := 0; i < len(g.FrostMask.Pix); i += 4 {
 		g.FrostMask.Pix[i], g.FrostMask.Pix[i+1], g.FrostMask.Pix[i+2], g.FrostMask.Pix[i+3] = c.R, c.G, c.B, c.A
 	}
 	g.FrostImg = ebiten.NewImageFromImage(g.FrostMask)
 
-	systems.InitLua(g.World)
+		systems.InitLua(g.World)
 
-	g.LoadLevel(0)
-	return g
-}
+		g.LoadLevel(0)
 
-func (g *Game) LoadLevel(idx int) {
-	if idx >= len(g.Levels) {
-		idx = len(g.Levels) - 1
+		return g
+
 	}
-	g.CurrentLevel = idx
-	lvl := g.Levels[idx]
-	w := g.World
-	// Reset ALL entity components to clear previous level artifacts
-	w.Transforms = make(map[core.Entity]*components.Transform)
-	w.Physics = make(map[core.Entity]*components.Physics)
-	w.Renders = make(map[core.Entity]*components.Render)
-	w.AIs = make(map[core.Entity]*components.AI)
-	w.Tags = make(map[core.Entity]*components.Tag)
-	w.GravityWells = make(map[core.Entity]*components.GravityWell)
-	w.InputControlleds = make(map[core.Entity]*components.InputControlled)
-	w.Walls = make(map[core.Entity]*components.Wall)
-	w.ProjectileEmitters = make(map[core.Entity]*components.ProjectileEmitter)
-	w.Lifetimes = make(map[core.Entity]*components.Lifetime)
+
 	
-	// Clear Particles
-	w.Particles.Reset()
+
+	func (g *Game) LoadLevel(idx int) {
+
+		if idx >= len(g.Levels) { idx = len(g.Levels) - 1 }
+
+		g.CurrentLevel = idx
+
+		lvl := g.Levels[idx]
+
+		w := g.World
+
 	
-	// Spawn Gravity Wells
-	for _, well := range lvl.Wells {
-		id := w.CreateEntity()
-		w.Transforms[id] = &components.Transform{Position: well.Position}
-		w.GravityWells[id] = &components.GravityWell{
-			Radius: well.Radius,
-			Mass:   well.Mass,
+
+		// Total state reset prevents entity leakage and memory bloat between level transitions
+
+		w.Transforms = make(map[core.Entity]*components.Transform)
+
+		w.Physics = make(map[core.Entity]*components.Physics)
+
+		w.Renders = make(map[core.Entity]*components.Render)
+
+		w.AIs = make(map[core.Entity]*components.AI)
+
+		w.Tags = make(map[core.Entity]*components.Tag)
+
+		w.GravityWells = make(map[core.Entity]*components.GravityWell)
+
+		w.InputControlleds = make(map[core.Entity]*components.InputControlled)
+
+		w.Walls = make(map[core.Entity]*components.Wall)
+
+		w.ProjectileEmitters = make(map[core.Entity]*components.ProjectileEmitter)
+
+		w.Lifetimes = make(map[core.Entity]*components.Lifetime)
+
+		
+
+		w.Particles.Reset()
+
+		
+
+		g.spawnLevelEntities(lvl)
+
+	}
+
+	
+
+	func (g *Game) spawnLevelEntities(lvl level.Level) {
+
+		w := g.World
+
+	
+
+		for _, well := range lvl.Wells {
+
+			id := w.CreateEntity()
+
+			w.Transforms[id] = &components.Transform{Position: well.Position}
+
+			w.GravityWells[id] = &components.GravityWell{Radius: well.Radius, Mass: well.Mass}
+
+			w.Tags[id] = &components.Tag{Name: "gravity_well"}
+
 		}
-		w.Tags[id] = &components.Tag{Name: "gravity_well"}
-	}
 
-	// Spawn Spectre
-	g.SpectreID = w.CreateEntity()
-	w.Tags[g.SpectreID] = &components.Tag{Name: "spectre"}
-	w.Transforms[g.SpectreID] = &components.Transform{Position: lvl.StartP2}
-	w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: 0.96, Mass: 1.0, GravityMultiplier: 3.5}
-	w.Renders[g.SpectreID] = &components.Render{Sprite: g.SpriteSpectre, Color: color.RGBA{255, 50, 50, 255}, Glow: true}
-	w.AIs[g.SpectreID] = &components.AI{ScriptName: "spectre.lua"}
-
-	// Spawn Runner
-	g.RunnerID = w.CreateEntity()
-	w.Tags[g.RunnerID] = &components.Tag{Name: "runner"}
-	w.Transforms[g.RunnerID] = &components.Transform{Position: lvl.StartP1}
-	w.Physics[g.RunnerID] = &components.Physics{MaxSpeed: 7.5, Friction: 0.92, Mass: 1.0}
-	w.Renders[g.RunnerID] = &components.Render{
-		Sprite: g.SpriteRunner, 
-		Color: color.RGBA{0, 255, 255, 255}, 
-		Glow: true,
-		Scale: 1.0, // Scale 1.0 because we are now generating a 16x16 vector sprite, not a tiny 8x8 BMP
-	}
-	w.AIs[g.RunnerID] = &components.AI{ScriptName: "runner.lua"}
-	w.InputControlleds[g.RunnerID] = &components.InputControlled{}
-	w.ProjectileEmitters[g.RunnerID] = &components.ProjectileEmitter{Interval: 1.0}
-
-	w.AIs[g.SpectreID].TargetID = int(g.RunnerID)
-	w.AIs[g.RunnerID].TargetID = int(g.SpectreID)
 	
-	g.generateMap(w)
-}
 
-func (g *Game) generateMap(w *world.World) {
-	// Map generation disabled per user request.
-	// Returning to empty/boundless void.
-}
+		for _, wall := range lvl.Walls {
 
-func spawnWall(w *world.World, x, y float64, destructible bool) {
+			spawnWall(w, wall.X, wall.Y, wall.Destructible)
+
+		}
+
+	
+
+		// Entity archetypes are composed through data rather than rigid inheritance
+
+		g.SpectreID = w.CreateEntity()
+
+		w.Tags[g.SpectreID] = &components.Tag{Name: "spectre"}
+
+		w.Transforms[g.SpectreID] = &components.Transform{Position: lvl.StartP2}
+
+		w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: 0.96, Mass: 1.0, GravityMultiplier: 3.5}
+
+		w.Renders[g.SpectreID] = &components.Render{Sprite: g.SpriteSpectre, Color: color.RGBA{255, 50, 50, 255}, Glow: true}
+
+		w.AIs[g.SpectreID] = &components.AI{ScriptName: "spectre.lua"}
+
+	
+
+		g.RunnerID = w.CreateEntity()
+
+		w.Tags[g.RunnerID] = &components.Tag{Name: "runner"}
+
+		w.Transforms[g.RunnerID] = &components.Transform{Position: lvl.StartP1}
+
+		w.Physics[g.RunnerID] = &components.Physics{MaxSpeed: 7.5, Friction: 0.92, Mass: 1.0}
+
+		w.Renders[g.RunnerID] = &components.Render{Sprite: g.SpriteRunner, Color: color.RGBA{0, 255, 255, 255}, Glow: true, Scale: 1.0}
+
+		w.AIs[g.RunnerID] = &components.AI{ScriptName: "runner.lua"}
+
+		w.InputControlleds[g.RunnerID] = &components.InputControlled{}
+
+		w.ProjectileEmitters[g.RunnerID] = &components.ProjectileEmitter{Interval: 1.0}
+
+	
+
+		w.AIs[g.SpectreID].TargetID = int(g.RunnerID)
+
+		w.AIs[g.RunnerID].TargetID = int(g.SpectreID)
+
+	}
+
+	
+
+	func spawnWall(w *world.World, x, y float64, destructible bool) {
 	id := w.CreateEntity()
 	w.Transforms[id] = &components.Transform{Position: core.Vector2{X: x, Y: y}}
 	w.Walls[id] = &components.Wall{
@@ -285,23 +339,6 @@ func generateAstroSprite() *ebiten.Image {
 	// But let's keep it simple: just the white shape.
 	
 	return img
-}
-
-func generateCyberSprite() *ebiten.Image {
-	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
-	cCyan := color.RGBA{0, 255, 255, 255}
-	cBlue := color.RGBA{0, 100, 200, 255}
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			if x > y && x > (15-y) {
-				img.Set(x, y, cCyan)
-			}
-			if y == 8 || x == 8 {
-				img.Set(x, y, cBlue)
-			}
-		}
-	}
-	return ebiten.NewImageFromImage(img)
 }
 
 // ======================================================================================

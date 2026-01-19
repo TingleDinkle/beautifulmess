@@ -1,7 +1,6 @@
 package systems
 
 import (
-	"fmt"
 	"log"
 	"math"
 
@@ -143,32 +142,26 @@ func SystemAI(w *world.World, lvl *level.Level) {
 	L := w.LState
 
 	for e, ai := range w.AIs {
-		if ai == nil || ai.ScriptName == "" {
-			continue
-		}
+		if ai == nil || ai.ScriptName == "" { continue }
 
-		// Pre-calculate nearest gravity well to simplify Lua logic and avoid costly iteration in script
+		// Pre-calculating perception data reduces the burden on the Lua VM and ensures consistent behavior
 		bestDist := 99999.0
 		var bestWellPos core.Vector2
 		foundWell := false
 		
-		pos := w.Transforms[e].Position
+		pos, ok := w.Transforms[e]
+		if !ok { continue }
 		
-		for wellID := range w.GravityWells {
-			wellTrans := w.Transforms[wellID]
-			if wellTrans == nil {
-				continue
-			}
+		for wellID, well := range w.GravityWells {
+			if well == nil { continue }
+			wellTrans, ok := w.Transforms[wellID]
+			if !ok { continue }
 			
-			// Account for world wrapping so AI perceives the shortest path
-			delta := core.VecToWrapped(pos, wellTrans.Position)
-			dx, dy := delta.X, delta.Y
-
-			d := math.Sqrt(dx*dx + dy*dy)
+			// Perceived shortest path calculation respects the toroidal nature of the universe
+			delta := core.VecToWrapped(pos.Position, wellTrans.Position)
+			d := math.Sqrt(delta.X*delta.X + delta.Y*delta.Y)
 			if d < bestDist {
-				bestDist = d
-				bestWellPos = wellTrans.Position
-				foundWell = true
+				bestDist, bestWellPos, foundWell = d, wellTrans.Position, true
 			}
 		}
 
@@ -177,33 +170,30 @@ func SystemAI(w *world.World, lvl *level.Level) {
 			wellX, wellY = bestWellPos.X, bestWellPos.Y
 		}
 
-		// Call the script's 'update_state' function
-		tableName := ai.ScriptName
-		// Remove .lua if present (simplistic)
-		if len(tableName) > 4 && tableName[len(tableName)-4:] == ".lua" {
-			tableName = tableName[:len(tableName)-4]
-		}
+		// Delegating decision-making to hot-reloadable scripts enables rapid gameplay balancing
+		tableName := getScriptName(ai.ScriptName)
 		
 		tbl := L.GetGlobal(tableName)
 		if tbl.Type() == lua.LTTable {
 			fn := L.GetField(tbl, "update_state")
 			if fn.Type() == lua.LTFunction {
-				err := L.CallByParam(lua.P{
-					Fn: fn,
-					NRet: 0,
-					Protect: true,
-				}, 
-				lua.LNumber(e), // id
-				lua.LNumber(lvl.Memory.Position.X), // mem_x
-				lua.LNumber(lvl.Memory.Position.Y), // mem_y
-				lua.LNumber(core.MemoryRadius),     // mem_radius
-				lua.LNumber(wellX),                 // well_x
-				lua.LNumber(wellY),                 // well_y
+				L.CallByParam(lua.P{Fn: fn, NRet: 0, Protect: true}, 
+					lua.LNumber(e),
+					lua.LNumber(lvl.Memory.Position.X),
+					lua.LNumber(lvl.Memory.Position.Y),
+					lua.LNumber(core.MemoryRadius),
+					lua.LNumber(wellX),
+					lua.LNumber(wellY),
 				)
-				if err != nil {
-					fmt.Printf("Lua Error on %s: %v\n", ai.ScriptName, err)
-				}
 			}
 		}
 	}
 }
+
+func getScriptName(name string) string {
+	if len(name) > 4 && name[len(name)-4:] == ".lua" {
+		return name[:len(name)-4]
+	}
+	return name
+}
+

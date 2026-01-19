@@ -52,13 +52,13 @@ func DrawEntities(screen *ebiten.Image, w *world.World, shake core.Vector2) {
 }
 
 func DrawWrappedCircle(screen *ebiten.Image, pos core.Vector2, r float64, c color.RGBA, fill bool) {
-	// Neighbor-cell drawing prevents visual 'popping' during toroidal transitions
+	// Rendering multiple instances per entity preserves visual continuity across toroidal seams
 	for ox := -1.0; ox <= 1.0; ox++ {
 		for oy := -1.0; oy <= 1.0; oy++ {
 			x := float32(pos.X + ox*core.ScreenWidth)
 			y := float32(pos.Y + oy*core.ScreenHeight)
 
-			if !isVisible(x, y, float32(r), float32(r)) { continue }
+			if !isVisible(x, y, float32(r*2), float32(r*2)) { continue }
 
 			if fill {
 				vector.DrawFilledCircle(screen, x, y, float32(r), c, true)
@@ -73,14 +73,17 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 	w, h := img.Size()
 	halfW, halfH := float64(w)/2, float64(h)/2
 	
+	// Pre-calculating scaled dimensions avoids redundant math inside the neighbor loop
+	sw, sh := float32(float64(w)*scale), float32(float64(h)*scale)
+
 	for ox := -1.0; ox <= 1.0; ox++ {
 		for oy := -1.0; oy <= 1.0; oy++ {
 			x, y := pos.X+ox*core.ScreenWidth, pos.Y+oy*core.ScreenHeight
 
-			if !isVisible(float32(x), float32(y), float32(float64(w)*scale), float32(float64(h)*scale)) { continue }
+			if !isVisible(float32(x), float32(y), sw, sh) { continue }
 
 			op := &ebiten.DrawImageOptions{}
-			op.Filter = ebiten.FilterNearest // Nearest filter preserves retro-pixel fidelity
+			op.Filter = ebiten.FilterNearest // Pixel-perfect filtering maintains the intended retro aesthetic
 			op.GeoM.Translate(-halfW, -halfH)
 			op.GeoM.Scale(scale, scale)
 			op.GeoM.Rotate(rot)
@@ -92,9 +95,10 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 }
 
 func isVisible(x, y, w, h float32) bool {
-	// Bounds check reduces GPU fill-rate pressure for off-screen wrapping instances
+	// Conservative bounds checking prevents off-screen draw calls from reaching the GPU
 	return x+w/2 >= 0 && x-w/2 <= core.ScreenWidth && y+h/2 >= 0 && y-h/2 <= core.ScreenHeight
 }
+
 
 
 

@@ -20,3 +20,12 @@ func VecToWrapped(from, to Vector2) Vector2 {
 	return Vector2{dx, dy}
 }
 
+func WrapPosition(p *Vector2) {
+	// Toroidal wrapping ensures that the coordinate space remains finite but boundless
+	if p.X < 0 { p.X += ScreenWidth }
+	if p.X >= ScreenWidth { p.X -= ScreenWidth }
+	if p.Y < 0 { p.Y += ScreenHeight }
+	if p.Y >= ScreenHeight { p.Y -= ScreenHeight }
+}
+
+

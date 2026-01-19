@@ -15,7 +15,7 @@ const SampleRate = 44100
 
 type AudioSystem struct {
 	Context *audio.Context
-	Sounds  map[string]*audio.Player
+	Samples map[string][]byte // Storing raw PCM data enables multi-channel polyphony
 }
 
 func NewAudioSystem() *AudioSystem {
@@ -23,7 +23,7 @@ func NewAudioSystem() *AudioSystem {
 	ctx := audio.NewContext(SampleRate)
 	as := &AudioSystem{
 		Context: ctx,
-		Sounds:  make(map[string]*audio.Player),
+		Samples: make(map[string][]byte),
 	}
 
 	as.generateInternalSounds()
@@ -51,29 +51,25 @@ func (as *AudioSystem) LoadFile(name, path string) {
 		return
 	}
 
-	as.Sounds[name] = as.Context.NewPlayerFromBytes(b)
+	as.Samples[name] = b
 }
 
 func (as *AudioSystem) Play(name string) {
-	if p, ok := as.Sounds[name]; ok {
-		if !p.IsPlaying() {
-			p.Rewind()
-			p.Play()
-		}
+	// Instantiating a new player from cached bytes allows overlapping instances of the same sound
+	if b, ok := as.Samples[name]; ok {
+		p := as.Context.NewPlayerFromBytes(b)
+		p.Play()
 	}
 }
 
 func (as *AudioSystem) generateInternalSounds() {
 	// Synthetic sound generation provides a zero-dependency fallback for core game feedback
-	as.Sounds["boost"] = as.createPlayerFromBytes(genNoise(0.2))
-	as.Sounds["chime"] = as.createPlayerFromBytes(genSine(880, 0.5))
-	as.Sounds["drone"] = as.createPlayerFromBytes(genSine(110, 2.0))
-	as.Sounds["spectre_dash"] = as.createPlayerFromBytes(genBreathyNoise(0.5))
+	as.Samples["boost"] = genNoise(0.2)
+	as.Samples["chime"] = genSine(880, 0.5)
+	as.Samples["drone"] = genSine(110, 2.0)
+	as.Samples["spectre_dash"] = genBreathyNoise(0.5)
 }
 
-func (as *AudioSystem) createPlayerFromBytes(b []byte) *audio.Player {
-	return as.Context.NewPlayerFromBytes(b)
-}
 
 func genNoise(duration float64) []byte {
 	length := int(duration * SampleRate)

@@ -10,14 +10,13 @@ import (
 
 func SystemPhysics(w *world.World) {
 	for id, phys := range w.Physics {
+		if phys == nil { continue }
 		trans, ok := w.Transforms[id]
-		if !ok {
-			continue
-		}
+		if !ok { continue }
 
 		applyForces(id, w)
 		integrate(phys, trans)
-		enforceBoundaries(trans)
+		core.WrapPosition(&trans.Position)
 		handleCollisions(id, w)
 	}
 }
@@ -26,21 +25,20 @@ func applyForces(id core.Entity, w *world.World) {
 	phys := w.Physics[id]
 	trans := w.Transforms[id]
 
-	// Bullets are modeled as high-energy particles unaffected by gravitational curvature
+	// Bullets move at high velocities and effectively ignore gravitational curvature
 	if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
 		return
 	}
 
 	for wellID, well := range w.GravityWells {
+		if well == nil { continue }
 		wellTrans, ok := w.Transforms[wellID]
-		if !ok || well == nil {
-			continue
-		}
+		if !ok { continue }
 
 		delta := core.VecToWrapped(trans.Position, wellTrans.Position)
 		d := math.Max(10, math.Sqrt(delta.X*delta.X+delta.Y*delta.Y))
 
-		// Standard inverse-square law for orbital mechanics
+		// Inverse-square law provides classic, predictable orbital mechanics
 		force := (well.Mass * 500) / (d * d)
 		force = math.Min(2.0, force)
 
@@ -54,13 +52,12 @@ func applyForces(id core.Entity, w *world.World) {
 }
 
 func integrate(phys *components.Physics, trans *components.Transform) {
-	// Semi-implicit Euler provides better energy conservation than standard Euler
+	// Semi-implicit Euler integration preserves system energy better than standard Euler
 	phys.Velocity.X += phys.Acceleration.X
 	phys.Velocity.Y += phys.Acceleration.Y
 	phys.Velocity.X *= phys.Friction
 	phys.Velocity.Y *= phys.Friction
 
-	// Speed clamping prevents 'tunnelling' through thin geometry at high velocities
 	speed := math.Sqrt(phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y)
 	if speed > phys.MaxSpeed {
 		scale := phys.MaxSpeed / speed
@@ -71,17 +68,9 @@ func integrate(phys *components.Physics, trans *components.Transform) {
 	trans.Position.X += phys.Velocity.X
 	trans.Position.Y += phys.Velocity.Y
 	
-	phys.Acceleration.X = 0
-	phys.Acceleration.Y = 0
+	phys.Acceleration.X, phys.Acceleration.Y = 0, 0
 }
 
-func enforceBoundaries(trans *components.Transform) {
-	// Toroidal topology ensures a boundless play area without edge-case logic
-	if trans.Position.X < 0 { trans.Position.X += core.ScreenWidth }
-	if trans.Position.X >= core.ScreenWidth { trans.Position.X -= core.ScreenWidth }
-	if trans.Position.Y < 0 { trans.Position.Y += core.ScreenHeight }
-	if trans.Position.Y >= core.ScreenHeight { trans.Position.Y -= core.ScreenHeight }
-}
 
 func handleCollisions(id core.Entity, w *world.World) {
 	trans, okT := w.Transforms[id]
@@ -90,48 +79,47 @@ func handleCollisions(id core.Entity, w *world.World) {
 	
 	tag, hasTag := w.Tags[id]
 
-	// Proximity-based filtering reduces the computational cost of toroidal AABB checks
-	entSize := 10.0
+	// Proximity checks against static geometry maintain high framerates in dense levels
+	const wallSize = 10.0
 	for wallID, wall := range w.Walls {
 		if wall == nil || wall.IsDestroyed { continue }
 		wallTrans, ok := w.Transforms[wallID]
 		if !ok { continue }
 
-		if math.Abs(trans.Position.X-wallTrans.Position.X) < (entSize/2+wall.Size/2) &&
-			math.Abs(trans.Position.Y-wallTrans.Position.Y) < (entSize/2+wall.Size/2) {
+		dx := math.Abs(trans.Position.X - wallTrans.Position.X)
+		dy := math.Abs(trans.Position.Y - wallTrans.Position.Y)
 
+		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
 			if hasTag && tag.Name == "bullet" {
 				w.DestroyEntity(id)
 				return
 			}
 
-			// Momentum cancellation simulates inelastic energy transfer on impact
+			// Inelastic impact logic simulates realistic data-packet collisions
 			phys.Velocity.X, phys.Velocity.Y = 0, 0
 			if wall.Destructible { wall.IsDestroyed = true }
 		}
 	}
 
-	// Dynamic entity interaction logic
+	// High-priority entity interactions are processed separately to allow complex behaviors
 	if hasTag && tag.Name == "bullet" {
 		for specID, specTag := range w.Tags {
-			if specTag.Name == "spectre" {
-				specTrans, okST := w.Transforms[specID]
-				specPhys, okSP := w.Physics[specID]
-				if okST && okSP {
-					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-						// Increasing susceptibility to gravity forces the spectre toward environmental hazards
-						specPhys.GravityMultiplier += 0.5
-						w.Audio.Play("boom")
-						w.ScreenShake += 8.0
-						w.DestroyEntity(id)
-						return
-					}
+			if specTag.Name != "spectre" { continue }
+			
+			specTrans, okST := w.Transforms[specID]
+			specPhys, okSP := w.Physics[specID]
+			if okST && okSP {
+				if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+					// Absorbed bullets increase gravity susceptibility, forcing narrative progression
+					specPhys.GravityMultiplier += 0.5
+					w.Audio.Play("boom")
+					w.ScreenShake += 8.0
+					w.DestroyEntity(id)
+					return
 				}
 			}
 		}
 	}
 }
-
-// destroyEntity removed in favor of World.DestroyEntity
 
 
