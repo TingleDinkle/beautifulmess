@@ -17,6 +17,8 @@ type World struct {
 	Tags       map[core.Entity]*components.Tag
 	GravityWells map[core.Entity]*components.GravityWell
 	InputControlleds map[core.Entity]*components.InputControlled
+	Walls            map[core.Entity]*components.Wall
+	ProjectileEmitters map[core.Entity]*components.ProjectileEmitter
 	
 	Particles *particles.ParticleSystem
 	Audio     *audio.AudioSystem
@@ -34,6 +36,8 @@ func NewWorld() *World {
 		Tags:       make(map[core.Entity]*components.Tag),
 		GravityWells: make(map[core.Entity]*components.GravityWell),
 		InputControlleds: make(map[core.Entity]*components.InputControlled),
+		Walls:            make(map[core.Entity]*components.Wall),
+		ProjectileEmitters: make(map[core.Entity]*components.ProjectileEmitter),
 		Particles: particles.NewParticleSystem(),
 		Audio:     audio.NewAudioSystem(),
 		LState:     lua.NewState(),

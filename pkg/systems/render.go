@@ -59,7 +59,12 @@ func DrawEntities(screen *ebiten.Image, w *world.World) {
 
 		trans := w.Transforms[id]
 
-		DrawWrappedSprite(screen, r.Sprite, trans.Position, trans.Rotation)
+		scale := r.Scale
+		if scale == 0 {
+			scale = 1.0
+		}
+
+		DrawWrappedSprite(screen, r.Sprite, trans.Position, trans.Rotation, scale)
 
 	}
 
@@ -107,7 +112,7 @@ func DrawWrappedCircle(screen *ebiten.Image, pos core.Vector2, r float64, c colo
 
 
 
-func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2, rot float64) {
+func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2, rot float64, scale float64) {
 
 	w, h := img.Size()
 
@@ -127,17 +132,21 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 
 			// Skip drawing instances that fall outside the viewport to reduce fill rate
 
-			if x+halfW < 0 || x-halfW > core.ScreenWidth || y+halfH < 0 || y-halfH > core.ScreenHeight {
-
+			// Box check needs to account for scale
+			scaledW := float64(w) * scale
+			scaledH := float64(h) * scale
+			if x+scaledW/2 < 0 || x-scaledW/2 > core.ScreenWidth || y+scaledH/2 < 0 || y-scaledH/2 > core.ScreenHeight {
 				continue
-
 			}
 
 
 
 			op := &ebiten.DrawImageOptions{}
 
+			op.Filter = ebiten.FilterNearest
+
 			op.GeoM.Translate(-halfW, -halfH)
+			op.GeoM.Scale(scale, scale)
 
 			op.GeoM.Rotate(rot)
 

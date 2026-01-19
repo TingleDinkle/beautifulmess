@@ -23,6 +23,7 @@ type Render struct {
 	Sprite *ebiten.Image
 	Color  color.RGBA
 	Glow   bool
+	Scale  float64
 }
 
 type AI struct {
@@ -40,3 +41,14 @@ type GravityWell struct {
 }
 
 type InputControlled struct{}
+
+type Wall struct {
+	Size         float64
+	Destructible bool
+	IsDestroyed  bool
+}
+
+type ProjectileEmitter struct {
+	Interval float64
+	LastTime float64
+}

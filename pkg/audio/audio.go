@@ -1,10 +1,13 @@
 package audio
 
 import (
+	"log"
 	"math"
 	"math/rand"
+	"os"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/hajimehoshi/ebiten/v2/audio/wav"
 )
 
 const (
@@ -26,6 +29,32 @@ func NewAudioSystem() *AudioSystem {
 	as.generateSounds()
 	return as
 }
+
+func (as *AudioSystem) LoadFile(name, path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		log.Printf("Failed to open audio file %s: %v", path, err)
+		return
+	}
+	defer f.Close()
+
+	d, err := wav.DecodeWithSampleRate(SampleRate, f)
+	if err != nil {
+		log.Printf("Failed to decode wav %s: %v", path, err)
+		return
+	}
+
+	// Read all bytes
+	size := d.Length()
+	b := make([]byte, size)
+	if _, err := d.Read(b); err != nil {
+		log.Printf("Failed to read wav bytes %s: %v", path, err)
+		return
+	}
+
+	as.Sounds[name] = as.Context.NewPlayerFromBytes(b)
+}
+
 
 func (as *AudioSystem) Play(name string) {
 	if p, ok := as.Sounds[name]; ok {

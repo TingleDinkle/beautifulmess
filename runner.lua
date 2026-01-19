@@ -1,19 +1,16 @@
 runner = {}
 
 function runner.update_state(id, mem_x, mem_y, mem_radius, well_x, well_y)
-    local idx, idy = get_input_dir() -- Input is global, no ID needed
+    local idx, idy = get_input_dir() 
     
-    -- Use high acceleration/friction for tight controls ("Snap" physics)
-    local accel = 1.5
+    -- Tank Controls: Left/Right rotates
+    local ang_vel = 0.1
     
-    if idx ~= 0 or idy ~= 0 then
-        apply_force(id, idx * accel, idy * accel)
-    else
-        -- Active braking (logic handled by friction in Go, but we can boost it)
+    if idx < 0 then
+        rotate(id, -ang_vel)
+    elseif idx > 0 then
+        rotate(id, ang_vel)
     end
     
-    -- Randomly trigger dash to simulate glitchy behavior
-    if math.random() < 0.02 then
-        apply_force(id, idx * 10, idy * 10)
-    end
+    -- Physics handles forward movement automatically.
 end

@@ -40,6 +40,15 @@ func InitLua(w *world.World) {
 		return 0
 	}))
 
+	L.SetGlobal("rotate", L.NewFunction(func(L *lua.LState) int {
+		id := getID(L)
+		delta := float64(L.CheckNumber(2))
+		if trans, ok := w.Transforms[id]; ok {
+			trans.Rotation += delta
+		}
+		return 0
+	}))
+
 	// Expose perception data
 	L.SetGlobal("get_self", L.NewFunction(func(L *lua.LState) int {
 		id := getID(L)

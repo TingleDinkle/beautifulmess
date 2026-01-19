@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color"
+	_ "image/png" // Ensure PNG support for completeness
 	"log"
 	"math/rand"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"beautifulmess/pkg/level"
 	"beautifulmess/pkg/systems"
 	"beautifulmess/pkg/world"
+	
+	_ "golang.org/x/image/bmp" // Register BMP format
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -99,8 +102,17 @@ func NewGame() *Game {
 		NebulaShader:  s,
 		StartTime:     time.Now(),
 		SpriteSpectre: generateGothicSprite(),
-		SpriteRunner:  generateCyberSprite(),
 	}
+
+	// Load Assets
+	var errImg error
+	g.SpriteRunner, _, errImg = ebitenutil.NewImageFromFile("assets/ship.bmp")
+	if errImg != nil {
+		log.Fatal(errImg)
+	}
+
+	g.World.Audio.LoadFile("shoot", "assets/shoot.wav")
+	g.World.Audio.LoadFile("boom", "assets/boom.wav")
 
 	// Initialize frost mask with base color to avoid initial transparency artifacts
 	c := color.RGBA{10, 5, 20, 240}
@@ -126,6 +138,8 @@ func (g *Game) LoadLevel(idx int) {
 	w.Physics = make(map[core.Entity]*components.Physics)
 	w.GravityWells = make(map[core.Entity]*components.GravityWell)
 	w.InputControlleds = make(map[core.Entity]*components.InputControlled)
+	w.Walls = make(map[core.Entity]*components.Wall)
+	w.ProjectileEmitters = make(map[core.Entity]*components.ProjectileEmitter)
 
 	// Spawn Gravity Wells
 	for _, well := range lvl.Wells {
@@ -151,21 +165,56 @@ func (g *Game) LoadLevel(idx int) {
 	w.Tags[g.RunnerID] = &components.Tag{Name: "runner"}
 	w.Transforms[g.RunnerID] = &components.Transform{Position: lvl.StartP1}
 	w.Physics[g.RunnerID] = &components.Physics{MaxSpeed: 7.5, Friction: 0.92, Mass: 1.0}
-	w.Renders[g.RunnerID] = &components.Render{Sprite: g.SpriteRunner, Color: color.RGBA{0, 255, 255, 255}, Glow: true}
+	w.Renders[g.RunnerID] = &components.Render{
+		Sprite: g.SpriteRunner, 
+		Color: color.RGBA{0, 255, 255, 255}, 
+		Glow: true,
+		Scale: 4.0,
+	}
 	w.AIs[g.RunnerID] = &components.AI{ScriptName: "runner.lua"}
 	w.InputControlleds[g.RunnerID] = &components.InputControlled{}
+	w.ProjectileEmitters[g.RunnerID] = &components.ProjectileEmitter{Interval: 0.4}
 
-	// Bind Lua (Now handled in systems, needs to be called after entities are created)
-	// We pass targetID so they know who to chase/avoid
-	// systems.BindLua(w, g.SpectreID, g.RunnerID)
-	// systems.BindLua(w, g.RunnerID, g.SpectreID)
-
-	// Link them (so they can find each other) - Wait, this was direct assignment in old code.
-	// w.AIs[g.SpectreID].TargetID = int(g.RunnerID)
-	// In new BindLua, we pass the targetID directly to the closure, so we don't strictly need .TargetID in struct unless Lua reads it from struct.
-	// But let's set it for consistency if we kept the field.
 	w.AIs[g.SpectreID].TargetID = int(g.RunnerID)
 	w.AIs[g.RunnerID].TargetID = int(g.SpectreID)
+	
+	// Spawn Walls (Hardcoded Map)
+	for _, y := range []float64{74, 84, 94} {
+		spawnWall(w, 44, y, true)
+		spawnWall(w, 74, y, true)
+	}
+	// Add a few more blocks to simulate the corner map
+	for x := 44.0; x < 200.0; x += 10 {
+		spawnWall(w, x, 20, false)
+		spawnWall(w, x, 700, false)
+	}
+	for y := 20.0; y < 700.0; y += 10 {
+		spawnWall(w, 20, y, false)
+		spawnWall(w, 1260, y, false)
+	}
+}
+
+func spawnWall(w *world.World, x, y float64, destructible bool) {
+	id := w.CreateEntity()
+	w.Transforms[id] = &components.Transform{Position: core.Vector2{X: x, Y: y}}
+	w.Walls[id] = &components.Wall{
+		Size: 10,
+		Destructible: destructible,
+	}
+	
+	// Create visual for wall
+	img := ebiten.NewImage(10, 10)
+	c := color.RGBA{100, 100, 100, 255}
+	if destructible {
+		c = color.RGBA{150, 100, 50, 255}
+	}
+	img.Fill(c)
+	
+	w.Renders[id] = &components.Render{
+		Sprite: img,
+		Color: c,
+		Scale: 1.0,
+	}
 }
 
 // Procedural Art Generators
@@ -226,6 +275,7 @@ func (g *Game) Update() error {
 	systems.SystemAI(g.World, lvl)
 	systems.SystemPhysics(g.World)
 	systems.SystemEntropy(g.World, g.FrostMask)
+	systems.SystemProjectileEmitter(g.World)
 	
 	// Update Particles (Visuals only, no game logic impact)
 	g.World.Particles.Update()
