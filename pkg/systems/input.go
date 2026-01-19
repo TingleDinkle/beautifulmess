@@ -22,7 +22,8 @@ func SystemInput(w *world.World) {
 		baseMaxSpeed := 7.5
 		accel, input := 1.5, core.Vector2{}
 		
-		if ebiten.IsKeyPressed(ebiten.KeyShift) {
+		// Supporting multiple key bindings ensures accessibility and comfort for different user grip styles
+		if ebiten.IsKeyPressed(ebiten.KeyShift) || ebiten.IsKeyPressed(ebiten.KeyC) {
 			accel = 4.5 // Increased from 3.5 for more immediate responsiveness
 			phys.MaxSpeed = baseMaxSpeed * 2.0 
 			w.Audio.Play("boost")
