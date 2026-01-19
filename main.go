@@ -370,19 +370,30 @@ func (g *Game) updateActive() error {
 }
 
 func (g *Game) checkWinCondition(lvl *level.Level) error {
-	pSpec := g.World.Transforms[g.SpectreID].Position
-	pRun := g.World.Transforms[g.RunnerID].Position
+	pSpec, okS := g.World.Transforms[g.SpectreID]
+	pRun, okR := g.World.Transforms[g.RunnerID]
+	if !okS || !okR { return nil }
 
 	// Spatial proximity check for win condition triggers the 'Reunion' state
-	if core.DistWrapped(pSpec, lvl.Memory.Position) < core.MemoryRadius && core.DistWrapped(pSpec, pRun) < 80 {
-		g.IsPaused = true
-		g.Popup = &lvl.Memory
-		g.PopupTime = time.Now()
-		g.PopupPhotoIndex = 0
-		g.World.Audio.Play("chime")
+	if core.DistWrapped(pSpec.Position, pRun.Position) < 80 {
+		for id, well := range g.World.GravityWells {
+			wellTrans, ok := g.World.Transforms[id]
+			if !ok || well == nil { continue }
+			
+			// Captured by the singularity: The ultimate endpoint of their shared trajectory
+			if core.DistWrapped(pSpec.Position, wellTrans.Position) < well.Radius + 15 {
+				g.IsPaused = true
+				g.Popup = &lvl.Memory
+				g.PopupTime = time.Now()
+				g.PopupPhotoIndex = 0
+				g.World.Audio.Play("chime")
+				return nil
+			}
+		}
 	}
 	return nil
 }
+
 
 
 func (g *Game) Draw(screen *ebiten.Image) {

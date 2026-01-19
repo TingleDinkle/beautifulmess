@@ -43,6 +43,7 @@ func SystemProjectileEmitter(w *world.World) {
 func spawnBullet(w *world.World, pos core.Vector2, rot, dx, dy float64) {
 	id := w.CreateEntity()
 
+	// Initial projection clears the ship's collision volume to prevent self-destruction
 	w.Transforms[id] = &components.Transform{
 		Position: core.Vector2{X: pos.X + dx*20, Y: pos.Y + dy*20},
 		Rotation: rot,
@@ -61,10 +62,11 @@ func spawnBullet(w *world.World, pos core.Vector2, rot, dx, dy float64) {
 		Scale:  0.5,
 	}
 	
-	// Temporary lifespan prevents memory leaks from missed projectiles
+	// Temporary lifespan prevents stale projectiles from impacting future gameplay states
 	w.Lifetimes[id] = &components.Lifetime{TimeRemaining: 2.0}
 	w.Tags[id] = &components.Tag{Name: "bullet"}
 }
+
 
 func generateBulletSprite() *ebiten.Image {
 	// Simple square geometry fits the low-resolution arcade aesthetic

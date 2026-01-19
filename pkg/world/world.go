@@ -58,3 +58,18 @@ func (w *World) CreateEntity() core.Entity {
 	return id
 }
 
+func (w *World) DestroyEntity(id core.Entity) {
+	// Centralized destruction prevents stale references in component maps from causing logic leaks
+	delete(w.Transforms, id)
+	delete(w.Physics, id)
+	delete(w.Renders, id)
+	delete(w.AIs, id)
+	delete(w.Tags, id)
+	delete(w.GravityWells, id)
+	delete(w.InputControlleds, id)
+	delete(w.Walls, id)
+	delete(w.ProjectileEmitters, id)
+	delete(w.Lifetimes, id)
+}
+
+

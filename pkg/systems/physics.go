@@ -84,51 +84,46 @@ func enforceBoundaries(trans *components.Transform) {
 }
 
 func handleCollisions(id core.Entity, w *world.World) {
-	trans := w.Transforms[id]
-	phys := w.Physics[id]
+	trans, okT := w.Transforms[id]
+	phys, okP := w.Physics[id]
+	if !okT || !okP { return }
+	
 	tag, hasTag := w.Tags[id]
 
-	// Wall Collisions
+	// Proximity-based filtering reduces the computational cost of toroidal AABB checks
 	entSize := 10.0
 	for wallID, wall := range w.Walls {
-		if wall == nil || wall.IsDestroyed {
-			continue
-		}
+		if wall == nil || wall.IsDestroyed { continue }
 		wallTrans, ok := w.Transforms[wallID]
-		if !ok {
-			continue
-		}
+		if !ok { continue }
 
 		if math.Abs(trans.Position.X-wallTrans.Position.X) < (entSize/2+wall.Size/2) &&
 			math.Abs(trans.Position.Y-wallTrans.Position.Y) < (entSize/2+wall.Size/2) {
 
 			if hasTag && tag.Name == "bullet" {
-				destroyEntity(id, w)
+				w.DestroyEntity(id)
 				return
 			}
 
-			// Inelastic collision response
-			phys.Velocity.X = 0
-			phys.Velocity.Y = 0
-			if wall.Destructible {
-				wall.IsDestroyed = true
-			}
+			// Momentum cancellation simulates inelastic energy transfer on impact
+			phys.Velocity.X, phys.Velocity.Y = 0, 0
+			if wall.Destructible { wall.IsDestroyed = true }
 		}
 	}
 
-	// Bullet-Specific Logic
+	// Dynamic entity interaction logic
 	if hasTag && tag.Name == "bullet" {
 		for specID, specTag := range w.Tags {
 			if specTag.Name == "spectre" {
-				specTrans, okT := w.Transforms[specID]
-				specPhys, okP := w.Physics[specID]
-				if okT && okP {
+				specTrans, okST := w.Transforms[specID]
+				specPhys, okSP := w.Physics[specID]
+				if okST && okSP {
 					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-						// Absorbing kinetic energy increases the spectre's mass/gravity susceptibility
+						// Increasing susceptibility to gravity forces the spectre toward environmental hazards
 						specPhys.GravityMultiplier += 0.5
 						w.Audio.Play("boom")
 						w.ScreenShake += 8.0
-						destroyEntity(id, w)
+						w.DestroyEntity(id)
 						return
 					}
 				}
@@ -137,12 +132,6 @@ func handleCollisions(id core.Entity, w *world.World) {
 	}
 }
 
-func destroyEntity(id core.Entity, w *world.World) {
-	// Deferred deletion logic is handled by component map removal
-	delete(w.Physics, id)
-	delete(w.Renders, id)
-	delete(w.Transforms, id)
-	delete(w.Tags, id)
-	delete(w.Lifetimes, id)
-}
+// destroyEntity removed in favor of World.DestroyEntity
+
 
