@@ -1,6 +1,7 @@
 package systems
 
 import (
+	"image/color"
 	"math"
 	"math/rand"
 
@@ -91,68 +92,85 @@ func handleCollisions(id core.Entity, w *world.World) {
 		delta := core.VecToWrapped(trans.Position, wallTrans.Position)
 		dx, dy := math.Abs(delta.X), math.Abs(delta.Y)
 
-		        // AABB collision detection with inelastic response simulates structural impact
-		        if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
-		            if hasTag && tag.Name == "bullet" {
-		                if wall.Destructible {
-		                    // Triggering a shatter event provides a visceral sense of structural failure
-		                    shatterEntity(w, wallID)
-		                    w.Audio.Play("boom") 
-		                    w.ScreenShake += 4.0
-		                    wall.IsDestroyed = true
-		                }
-		                w.DestroyEntity(id)
-		                return
-		            }
-		
-		            // Inelastic collision response prevents entities from passing through solid data structures
-		            phys.Velocity.X, phys.Velocity.Y = 0, 0
-		        }
-		    }
-		
-		    // Dynamic entity interaction logic
-		    if hasTag && tag.Name == "bullet" {
-		        for specID, specTag := range w.Tags {
-		            if specTag.Name != "spectre" { continue }
-		            
-		            if specTrans, okST := w.Transforms[specID]; okST {
-		                if specPhys, okSP := w.Physics[specID]; okSP {
-		                    if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
-		                        // Absorbing high-velocity projectiles significantly increases local mass-susceptibility
-		                        specPhys.GravityMultiplier += 1.0
-		                        w.Audio.Play("boom")
-		                        w.ScreenShake += 8.0
-		                        
-		                        // Spectre shattering (visual only) reinforces the impact weight
-		                        shatterEntity(w, specID)
-		                        
-		                        w.DestroyEntity(id)
-		                        return
-		                    }
-		                }
-		            }
-		        }
-		    }
-		}
-		
-		func shatterEntity(w *world.World, id core.Entity) {
-		    // A particle-burst 'destruction engine' translates entity removal into an aesthetic event
-		    trans, okT := w.Transforms[id]
-		    render, okR := w.Renders[id]
-		    if !okT || !okR { return }
-		
-		    numParticles := 15
-		    for i := 0; i < numParticles; i++ {
-		        // Random velocity vectors simulate the chaotic dispersal of fragments
-		        angle := rand.Float64() * 2 * math.Pi
-		        speed := rand.Float64() * 4.0
+		        		// AABB collision detection with inelastic response simulates structural impact
+		        		if dx < (5.0 + wall.Size/2) && dy < (5.0 + wall.Size/2) {
+		        			if hasTag && tag.Name == "bullet" {
+		        				if wall.Destructible {
+		        					// Triggering a shatter event provides a visceral sense of structural failure
+		        					shatterEntity(w, wallID)
+		        					w.Audio.Play("boom") 
+		        					w.ScreenShake += 4.0
+		        					
+		        					// Removing the entity from the simulation prevents redundant collision processing
+		        					w.DestroyEntity(wallID)
+		        				} else {
+		        					// Physical feedback on static geometry prevents the world from feeling 'unresponsive'
+		        					emitImpactFeedback(w, trans.Position)
+		        				}
+		        				w.DestroyEntity(id)
+		        				return
+		        			}
 		        
-		        w.Particles.Emit(
-		            trans.Position,
-		            core.Vector2{X: math.Cos(angle) * speed, Y: math.Sin(angle) * speed},
-		            render.Color,
-		            0.02 + rand.Float64()*0.03, // Variable decay adds depth to the debris field
-		        )
-		    }
-		}
-
+		        			// Inelastic collision response prevents entities from passing through solid data structures
+		        			phys.Velocity.X, phys.Velocity.Y = 0, 0
+		        		}
+		        	}
+		        
+		        	// Dynamic entity interaction logic
+		        	if hasTag && tag.Name == "bullet" {
+		        		for specID, specTag := range w.Tags {
+		        			if specTag.Name != "spectre" { continue }
+		        			
+		        			if specTrans, okST := w.Transforms[specID]; okST {
+		        				if specPhys, okSP := w.Physics[specID]; okSP {
+		        					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+		        						// Absorbing high-velocity projectiles significantly increases local mass-susceptibility
+		        						specPhys.GravityMultiplier += 1.0
+		        						w.Audio.Play("boom")
+		        						w.ScreenShake += 8.0
+		        						
+		        						// Spectre shattering (visual only) reinforces the impact weight
+		        						shatterEntity(w, specID)
+		        						
+		        						w.DestroyEntity(id)
+		        						return
+		        					}
+		        				}
+		        			}
+		        		}
+		        	}
+		        }
+		        
+		        func shatterEntity(w *world.World, id core.Entity) {
+		        	// A multi-layered pixel-burst simulates the violent deconstruction of data objects
+		        	trans, okT := w.Transforms[id]
+		        	render, okR := w.Renders[id]
+		        	if !okT || !okR { return }
+		        
+		        	// Primary debris cloud
+		        	spawnDebris(w, trans.Position, render.Color, 20, 5.0)
+		        	
+		        	// Secondary 'glow' shards emphasize the energetic nature of the destruction
+		        	glowColor := color.RGBA{255, 255, 200, 255}
+		        	spawnDebris(w, trans.Position, glowColor, 8, 8.0)
+		        }
+		        
+		        func emitImpactFeedback(w *world.World, pos core.Vector2) {
+		        	// Subtle particle emission on indestructible surfaces conveys physical hardness
+		        	spawnDebris(w, pos, color.RGBA{200, 200, 255, 255}, 5, 2.0)
+		        }
+		        
+		        func spawnDebris(w *world.World, pos core.Vector2, col color.RGBA, count int, maxSpeed float64) {
+		        	for i := 0; i < count; i++ {
+		        		angle := rand.Float64() * 2 * math.Pi
+		        		speed := rand.Float64() * maxSpeed
+		        		
+		        		w.Particles.Emit(
+		        			pos,
+		        			core.Vector2{X: math.Cos(angle) * speed, Y: math.Sin(angle) * speed},
+		        			col,
+		        			0.01 + rand.Float64()*0.04, // Varied decay rates create a lingering debris field
+		        		)
+		        	}
+		        }
+		        
