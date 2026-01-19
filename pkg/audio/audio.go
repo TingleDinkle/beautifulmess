@@ -64,12 +64,38 @@ func (as *AudioSystem) Play(name string) {
 
 func (as *AudioSystem) generateInternalSounds() {
 	// Synthetic sound generation provides a zero-dependency fallback for core game feedback
-	as.Samples["boost"] = genNoise(0.2)
+	as.Samples["boost"] = genBlitz(0.3)
 	as.Samples["chime"] = genSine(880, 0.5)
 	as.Samples["drone"] = genSine(110, 2.0)
 	as.Samples["spectre_dash"] = genBreathyNoise(0.5)
 }
 
+func genBlitz(duration float64) []byte {
+	// A sub-bass 'thump' combined with a clean aerodynamic sweep simulates extreme velocity displacement
+	length := int(duration * SampleRate)
+	b := make([]byte, length*2)
+	
+	for i := 0; i < length; i++ {
+		t := float64(i) / SampleRate
+		
+		// The 'thump': A low-frequency sine wave provides the physical impact felt at the start of the dash
+		thump := math.Sin(2 * math.Pi * 60.0 * t) * math.Exp(-t * 20.0)
+		
+		// The 'sweep': A clean frequency descent simulates the sound of air being cut at high speed
+		sweepFreq := 800.0 * math.Exp(-t * 10.0) + 100.0
+		sweep := math.Sin(2 * math.Pi * sweepFreq * t)
+		
+		// A highly smoothed envelope prevents auditory fatigue and ensures a 'pleasant' arcade finish
+		env := math.Exp(-t * 6.0)
+		if t < 0.03 { env = t / 0.03 } 
+		
+		// Mixing the thump and sweep creates a multi-layered, professional-grade 'blitz' effect
+		val := (thump * 0.6) + (sweep * 0.4)
+		s := int16(val * env * 0.3 * 32767)
+		b[2*i], b[2*i+1] = byte(s), byte(s >> 8)
+	}
+	return b
+}
 
 func genNoise(duration float64) []byte {
 	length := int(duration * SampleRate)
