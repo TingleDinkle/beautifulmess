@@ -73,8 +73,12 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 	w, h := img.Size()
 	halfW, halfH := float64(w)/2, float64(h)/2
 	
-	// Pre-calculating scaled dimensions avoids redundant math inside the neighbor loop
 	sw, sh := float32(float64(w)*scale), float32(float64(h)*scale)
+
+	// Reusing DrawImageOptions across neighbor instances prevents redundant heap allocations per frame
+	op := &ebiten.DrawImageOptions{}
+	op.Filter = ebiten.FilterNearest 
+	op.ColorScale.ScaleWithColor(clr)
 
 	for ox := -1.0; ox <= 1.0; ox++ {
 		for oy := -1.0; oy <= 1.0; oy++ {
@@ -82,17 +86,17 @@ func DrawWrappedSprite(screen *ebiten.Image, img *ebiten.Image, pos core.Vector2
 
 			if !isVisible(float32(x), float32(y), sw, sh) { continue }
 
-			op := &ebiten.DrawImageOptions{}
-			op.Filter = ebiten.FilterNearest // Pixel-perfect filtering maintains the intended retro aesthetic
+			op.GeoM.Reset()
 			op.GeoM.Translate(-halfW, -halfH)
 			op.GeoM.Scale(scale, scale)
 			op.GeoM.Rotate(rot)
 			op.GeoM.Translate(x, y)
-			op.ColorScale.ScaleWithColor(clr)
+			
 			screen.DrawImage(img, op)
 		}
 	}
 }
+
 
 func isVisible(x, y, w, h float32) bool {
 	// Conservative bounds checking prevents off-screen draw calls from reaching the GPU

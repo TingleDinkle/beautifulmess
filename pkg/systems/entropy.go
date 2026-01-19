@@ -9,11 +9,12 @@ import (
 )
 
 func SystemEntropy(w *world.World, frostMask *image.RGBA) {
-	// Periodic alpha increment simulates the universe 'healing' or forgetting entity paths
+	// A raw buffer traversal avoids the overhead of higher-level image manipulation functions during the 'healing' phase
 	pix := frostMask.Pix
 	for i := 3; i < len(pix); i += 4 {
 		if pix[i] < 240 {
-			pix[i] = uint8(int(pix[i]) + 2)
+			// Incrementing alpha values simulates the slow dissipation of past data trails
+			pix[i] += 2
 		}
 	}
 
@@ -32,6 +33,7 @@ func SystemEntropy(w *world.World, frostMask *image.RGBA) {
 		meltRetro(frostMask, sx, sy, rad, 100)
 	}
 }
+
 
 func meltRetro(img *image.RGBA, cx, cy, r, val int) {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
