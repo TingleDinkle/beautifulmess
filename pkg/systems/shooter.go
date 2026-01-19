@@ -21,60 +21,55 @@ func SystemProjectileEmitter(w *world.World) {
 
 			w.Audio.Play("shoot")
 			
-			// Juice: Screen Shake
+			// Visual and physical feedback reinforces the gun's power scale
 			w.ScreenShake += 2.0
 
-			shooterTrans := w.Transforms[id]
-			if shooterTrans == nil {
-				continue
-			}
+			trans, ok := w.Transforms[id]
+			if !ok { continue }
 
-			// Spawn Entity: Create a "Gravity Well Bullet" at Position + ForwardVector * 20
-			dirX := math.Cos(shooterTrans.Rotation)
-			dirY := math.Sin(shooterTrans.Rotation)
+			dirX, dirY := math.Cos(trans.Rotation), math.Sin(trans.Rotation)
 			
-			// Juice: Recoil
-			// Apply reverse force to shooter if physics exist
-			if shooterPhys, ok := w.Physics[id]; ok {
-				shooterPhys.Velocity.X -= dirX * 1.5
-				shooterPhys.Velocity.Y -= dirY * 1.5
+			// Newton's third law: Recoil provides a tactile penalty for blind-firing
+			if phys, ok := w.Physics[id]; ok {
+				phys.Velocity.X -= dirX * 1.5
+				phys.Velocity.Y -= dirY * 1.5
 			}
 
-			spawnPos := core.Vector2{
-				X: shooterTrans.Position.X + dirX*20,
-				Y: shooterTrans.Position.Y + dirY*20,
-			}
-
-			bulletID := w.CreateEntity()
-
-			w.Transforms[bulletID] = &components.Transform{
-				Position: spawnPos,
-				Rotation: shooterTrans.Rotation,
-			}
-
-			w.Physics[bulletID] = &components.Physics{
-				Velocity: core.Vector2{X: dirX * 8.0, Y: dirY * 8.0},
-				MaxSpeed: 20.0,
-				Mass:     5.0,
-				Friction: 1.0, 
-			}
-
-			w.Renders[bulletID] = &components.Render{
-				Sprite: generateBulletSprite(),
-				Color:  color.RGBA{255, 255, 255, 255},
-				Scale:  0.5,
-			}
-			
-			w.Lifetimes[bulletID] = &components.Lifetime{TimeRemaining: 2.0}
-			
-			// Add Tag to identify it
-			w.Tags[bulletID] = &components.Tag{Name: "bullet"}
+			spawnBullet(w, trans.Position, trans.Rotation, dirX, dirY)
 		}
 	}
 }
 
+func spawnBullet(w *world.World, pos core.Vector2, rot, dx, dy float64) {
+	id := w.CreateEntity()
+
+	w.Transforms[id] = &components.Transform{
+		Position: core.Vector2{X: pos.X + dx*20, Y: pos.Y + dy*20},
+		Rotation: rot,
+	}
+
+	w.Physics[id] = &components.Physics{
+		Velocity: core.Vector2{X: dx * 8.0, Y: dy * 8.0},
+		MaxSpeed: 20.0,
+		Mass:     5.0,
+		Friction: 1.0, 
+	}
+
+	w.Renders[id] = &components.Render{
+		Sprite: generateBulletSprite(),
+		Color:  color.RGBA{255, 255, 255, 255},
+		Scale:  0.5,
+	}
+	
+	// Temporary lifespan prevents memory leaks from missed projectiles
+	w.Lifetimes[id] = &components.Lifetime{TimeRemaining: 2.0}
+	w.Tags[id] = &components.Tag{Name: "bullet"}
+}
+
 func generateBulletSprite() *ebiten.Image {
+	// Simple square geometry fits the low-resolution arcade aesthetic
 	img := ebiten.NewImage(8, 8)
-	img.Fill(color.White) // Simple white square
+	img.Fill(color.White)
 	return img
 }
+

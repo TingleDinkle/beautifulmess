@@ -3,8 +3,9 @@ package main
 import (
 	"image"
 	"image/color"
-	_ "image/png" // Ensure PNG support for completeness
+	_ "image/png"
 	"log"
+	"math"
 	"math/rand"
 	"time"
 
@@ -304,205 +305,203 @@ func generateCyberSprite() *ebiten.Image {
 }
 
 // ======================================================================================
-// RUN LOOP
+// GAME LOOP
 // ======================================================================================
 
 func (g *Game) Update() error {
-	// Manual Pause Toggle
+	g.handleInput()
+
+	if g.IsPaused {
+		return g.updatePaused()
+	}
+
+	return g.updateActive()
+}
+
+func (g *Game) handleInput() {
+	// Manual toggles allow users to control session flow independently of game events
 	if inpututil.IsKeyJustPressed(ebiten.KeyP) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		g.IsPaused = !g.IsPaused
-		// If manually pausing, ensure no Popup is set (unless we want to keep it)
-		// If we unpause, clear popup
 		if !g.IsPaused {
 			g.Popup = nil
 		}
 	}
+}
 
-	if g.IsPaused {
-		// Allow unpausing via Space if it was a story popup, or P/Esc handled above
-		if g.Popup != nil && ebiten.IsKeyPressed(ebiten.KeySpace) {
+func (g *Game) updatePaused() error {
+	if g.Popup != nil {
+		// Pagination controls allow narrative data to be explored at the user's pace
+		if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
+			g.PopupPhotoIndex = (g.PopupPhotoIndex + 1) % len(g.Popup.Photos)
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
+			g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos)
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 			g.IsPaused = false
 			g.Popup = nil
 			g.LoadLevel(g.CurrentLevel + 1)
 		}
+	}
+	return nil
+}
+
+func (g *Game) updateActive() error {
+	// Frame-skipping during hit-stop emphasizes impact weight through rhythmic disruption
+	if g.HitStop > 0 {
+		g.HitStop -= 1.0 / 60.0
+		g.World.ScreenShake *= 0.9
 		return nil
 	}
 
-	// Tick Systems
-	
-	// Game Feel: HitStop
-	if g.HitStop > 0 {
-		g.HitStop -= 1.0 / 60.0
-		// Shake decay
-		g.World.ScreenShake *= 0.9
-		// Render visuals but skip physics/logic updates
-		g.World.Particles.Update() 
-		return nil
-	}
-	
-	// Game Feel: Shake Decay during normal play
 	g.World.ScreenShake *= 0.9
 	if g.World.ScreenShake < 0.5 { g.World.ScreenShake = 0 }
 
-	lvl := &g.Levels[g.CurrentLevel] // Pass pointer to current level
+	lvl := &g.Levels[g.CurrentLevel]
 	systems.SystemInput(g.World)
 	systems.SystemAI(g.World, lvl)
 	systems.SystemPhysics(g.World)
 	systems.SystemEntropy(g.World, g.FrostMask)
 	systems.SystemProjectileEmitter(g.World)
 	systems.SystemLifetime(g.World)
-	
-	// Update Particles (Visuals only, no game logic impact)
 	g.World.Particles.Update()
 
-	// Check win condition: Spectre trapped near memory node while runner is present
+	return g.checkWinCondition(lvl)
+}
+
+func (g *Game) checkWinCondition(lvl *level.Level) error {
 	pSpec := g.World.Transforms[g.SpectreID].Position
 	pRun := g.World.Transforms[g.RunnerID].Position
 
-	dSpecMem := core.DistWrapped(pSpec, lvl.Memory.Position)
-	dRunSpec := core.DistWrapped(pSpec, pRun)
-
-	if dSpecMem < core.MemoryRadius && dRunSpec < 80 {
+	// Spatial proximity check for win condition triggers the 'Reunion' state
+	if core.DistWrapped(pSpec, lvl.Memory.Position) < core.MemoryRadius && core.DistWrapped(pSpec, pRun) < 80 {
 		g.IsPaused = true
 		g.Popup = &lvl.Memory
 		g.PopupTime = time.Now()
+		g.PopupPhotoIndex = 0
 		g.World.Audio.Play("chime")
 	}
 	return nil
 }
 
+
 func (g *Game) Draw(screen *ebiten.Image) {
-	// Game Feel: Screen Shake
+	// Screen shake is calculated once per frame to ensure visual consistency across all layers
 	shake := core.Vector2{}
 	if g.World.ScreenShake > 0 {
-		shake.X = (rand.Float64() - 0.5) * g.World.ScreenShake * 2 // Multiplier already high enough if value is 5-10
+		shake.X = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
 		shake.Y = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
 	}
+
+	g.drawWorld(screen, shake)
+	g.drawUI(screen)
+}
+
+func (g *Game) drawWorld(screen *ebiten.Image, shake core.Vector2) {
+	// Render order establishes visual depth: Background -> Particles -> World -> Mist -> Entities
+	g.drawBackground(screen)
+	g.World.Particles.Draw(screen)
 	
-	// Draw Nebula (Shader) - Background usually doesn't shake or shakes differently (parallax). Let's keep it static.
+	lvl := &g.Levels[g.CurrentLevel]
+	systems.DrawLevel(screen, g.World, lvl, g.World.Transforms[g.SpectreID].Position, shake)
+	
+	g.drawMist(screen)
+	systems.DrawEntities(screen, g.World, shake)
+}
+
+func (g *Game) drawBackground(screen *ebiten.Image) {
 	w, h := screen.Size()
 	t := float32(time.Since(g.StartTime).Seconds())
 	op := &ebiten.DrawRectShaderOptions{}
 	op.Uniforms = map[string]interface{}{"Cursor": []float32{0, 0, t}}
 	screen.DrawRectShader(w, h, g.NebulaShader, op)
+}
 
-	// Draw Particles (Background layer for depth)
-	g.World.Particles.Draw(screen)
-
-	// Draw Gravity Wells (Black Holes)
-	lvl := &g.Levels[g.CurrentLevel]
-	systems.DrawLevel(screen, g.World, lvl, g.World.Transforms[g.SpectreID].Position, shake)
-
-	// Draw Mist Layer
+func (g *Game) drawMist(screen *ebiten.Image) {
+	// Mist buffer is scaled to lower resolution to achieve a dithering effect without high GPU overhead
 	g.FrostImg.WritePixels(g.FrostMask.Pix)
 	mistOp := &ebiten.DrawImageOptions{}
 	mistOp.GeoM.Scale(float64(core.ScreenWidth)/core.MistWidth, float64(core.ScreenHeight)/core.MistHeight)
 	screen.DrawImage(g.FrostImg, mistOp)
+}
 
-	// Draw Entities
-	systems.DrawEntities(screen, g.World, shake)
+func (g *Game) drawUI(screen *ebiten.Image) {
+	if !g.IsPaused {
+		return
+	}
 
-	// 5. Draw UI Modal
-	if g.IsPaused {
-		// Calculate Center
-		cx, cy := float32(core.ScreenWidth/2), float32(core.ScreenHeight/2)
+	if g.Popup != nil {
+		g.drawPopup(screen)
+	} else {
+		g.drawPauseMenu(screen)
+	}
+}
 
-					if g.Popup != nil {
-						// Story Popup
-						dt := float64(time.Since(g.PopupTime).Seconds())
-						scale := dt * 5.0
-						if scale > 1.0 { scale = 1.0 }
-						scale = scale * (1.0 + 0.3*(1.0-scale))
-		
-						// Larger box for Photos
-						bx, by := 300.0, 100.0
-						bw, bh := 680.0, 500.0
-						
-						// Apply scale
-						cxModal, cyModal := bx+bw/2, by+bh/2
-						bw *= scale
-						bh *= scale
-						bx = cxModal - bw/2
-						by = cyModal - bh/2
-		
-						// Modal Background
-						vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 245}, false)
-						vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
-		
-						if scale > 0.9 {
-							// Title
-							ebitenutil.DebugPrintAt(screen, "[ MEMORY FRAGMENT ]", int(bx)+280, int(by)+20)
-							ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+50);
-		
-							// Photo Area
-							photoW, photoH := 400.0, 300.0
-							px, py := bx+(bw-photoW)/2, by+80
-							
-							// Placeholder Photo Art (seeded by index)
-							// We use the index to change the color/pattern to show navigation works
-							seed := int64(g.PopupPhotoIndex * 100)
-							rng := rand.New(rand.NewSource(time.Now().UnixNano() + seed))
-							
-							for i := 0; i < 200; i++ {
-								rx := rng.Float64() * photoW
-								ry := rng.Float64() * photoH
-								rw := rng.Float64() * 30
-													c := uint8(rng.Intn(255))
-													// Tint based on index
-													cr, cg, cb := c, c, c
-													if g.PopupPhotoIndex == 0 { cr = 255; cg = c/2; cb = c/2 } // Reddish
-													if g.PopupPhotoIndex == 1 { cr = c/2; cg = 255; cb = c/2 } // Greenish
-													if g.PopupPhotoIndex == 2 { cr = c/2; cg = c/2; cb = 255 } // Bluish
-													
-													vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rw), 2, color.RGBA{uint8(cr), uint8(cg), uint8(cb), 255}, false)							}
-							vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
-		
-							// Navigation Arrows
-							if len(g.Popup.Photos) > 1 {
-								// Left Arrow
-								ebitenutil.DebugPrintAt(screen, "< PREV (A)", int(px)-80, int(py)+int(photoH)/2)
-								// Right Arrow
-								ebitenutil.DebugPrintAt(screen, "(D) NEXT >", int(px)+int(photoW)+10, int(py)+int(photoH)/2)
-								
-								// Photo Counter
-								ebitenutil.DebugPrintAt(screen, "IMG "+string(rune('1'+g.PopupPhotoIndex))+"/"+string(rune('1'+len(g.Popup.Photos)-1)), int(px)+int(photoW)-60, int(py)+int(photoH)+10)
-							}
-		
-							// Description
-							ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+400)
-							
-							ebitenutil.DebugPrintAt(screen, "[ SPACE TO RECOVER ]", int(bx)+260, int(by)+470)
-						}
-					} else {			// Manual Pause - Retro Pacman Style
-			
-			// Dim background
-			vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
-			
-			bw, bh := 400.0, 120.0
-			bx := float64(cx) - bw/2
-			by := float64(cy) - bh/2
-			
-			pacBlue := color.RGBA{33, 33, 255, 255}
-			pacYellow := color.RGBA{255, 255, 0, 255}
+func (g *Game) drawPopup(screen *ebiten.Image) {
+	dt := float64(time.Since(g.PopupTime).Seconds())
+	scale := math.Min(1.0, dt*5.0)
+	scale = scale * (1.0 + 0.3*(1.0-scale)) // Elastic scaling creates a 'tactile' UI feel
 
-			// Clean Grid Border
-			vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 2, pacBlue, false)
-			
-			// "PAUSED" Text in Yellow
-			// Since DebugPrint is always white, we can't easily change it without a font.
-			// However, we can draw a yellow rect behind it or just use white and accent it.
-			// Let's draw a yellow bar and put black text? 
-			// No, let's just stick to the iconic white debug text but surround it with yellow pellets.
-			
-			ebitenutil.DebugPrintAt(screen, "--- PAUSED ---", int(bx)+145, int(by)+40)
-			ebitenutil.DebugPrintAt(screen, "RESUME: PRESS P", int(bx)+145, int(by)+70)
-			
-			// Draw simple yellow "Pellet" grid in background or corners
-			for px := 0; px < 5; px++ {
-				vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+15, 2, pacYellow, true)
-				vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+float32(bh)-15, 2, pacYellow, true)
-			}
-		}
+	bx, by := 300.0, 100.0
+	bw, bh := 680.0, 500.0
+	cx, cy := bx+bw/2, by+bh/2
+	bw, bh = bw*scale, bh*scale
+	bx, by = cx-bw/2, cy-bh/2
+
+	vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 245}, false)
+	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
+
+	if scale > 0.9 {
+		g.renderPopupContent(screen, bx, by, bw, bh)
+	}
+}
+
+func (g *Game) renderPopupContent(screen *ebiten.Image, bx, by, bw, bh float64) {
+	ebitenutil.DebugPrintAt(screen, "[ MEMORY FRAGMENT ]", int(bx)+280, int(by)+20)
+	ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+50)
+
+	photoW, photoH := 400.0, 300.0
+	px, py := bx+(bw-photoW)/2, by+80
+	
+	// Dynamic noise pattern acts as a placeholder for fragmented visual data
+	seed := int64(g.PopupPhotoIndex * 100)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano() + seed))
+	for i := 0; i < 200; i++ {
+		rx, ry := rng.Float64()*photoW, rng.Float64()*photoH
+		c := uint8(rng.Intn(255))
+		cr, cg, cb := c, c, c
+		// Visual tinting provides immediate feedback for pagination state
+		if g.PopupPhotoIndex == 0 { cr = 255; cg /= 2; cb /= 2 }
+		if g.PopupPhotoIndex == 1 { cr /= 2; cg = 255; cb /= 2 }
+		if g.PopupPhotoIndex == 2 { cr /= 2; cg /= 2; cb = 255 }
+		vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(rng.Float64()*30), 2, color.RGBA{cr, cg, cb, 255}, false)
+	}
+	vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
+
+	if len(g.Popup.Photos) > 1 {
+		ebitenutil.DebugPrintAt(screen, "< PREV (A)", int(px)-80, int(py)+int(photoH)/2)
+		ebitenutil.DebugPrintAt(screen, "(D) NEXT >", int(px)+int(photoW)+10, int(py)+int(photoH)/2)
+		ebitenutil.DebugPrintAt(screen, "IMG "+string(rune('1'+g.PopupPhotoIndex))+"/"+string(rune('1'+len(g.Popup.Photos)-1)), int(px)+int(photoW)-60, int(py)+int(photoH)+10)
+	}
+
+	ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+400)
+	ebitenutil.DebugPrintAt(screen, "[ SPACE TO RECOVER ]", int(bx)+260, int(by)+470)
+}
+
+func (g *Game) drawPauseMenu(screen *ebiten.Image) {
+	vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
+	
+	bw, bh := 400.0, 120.0
+	bx, by := float64(core.ScreenWidth-bw)/2, float64(core.ScreenHeight-bh)/2
+	
+	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 2, color.RGBA{33, 33, 255, 255}, false)
+	ebitenutil.DebugPrintAt(screen, "--- PAUSED ---", int(bx)+145, int(by)+40)
+	ebitenutil.DebugPrintAt(screen, "RESUME: PRESS P", int(bx)+145, int(by)+70)
+	
+	// Symmetrical arcade-inspired accents reinforce the retro theme
+	for px := 0; px < 5; px++ {
+		vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+15, 2, color.RGBA{255, 255, 0, 255}, true)
+		vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+float32(bh)-15, 2, color.RGBA{255, 255, 0, 255}, true)
 	}
 }
 

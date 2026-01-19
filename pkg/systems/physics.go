@@ -3,138 +3,146 @@ package systems
 import (
 	"math"
 
+	"beautifulmess/pkg/components"
 	"beautifulmess/pkg/core"
 	"beautifulmess/pkg/world"
 )
 
 func SystemPhysics(w *world.World) {
 	for id, phys := range w.Physics {
-		trans := w.Transforms[id]
-		if trans == nil {
+		trans, ok := w.Transforms[id]
+		if !ok {
 			continue
 		}
 
-		// Calculate gravitational pull from all wells
-		// Bullets are immune to gravity
-		if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
-			// Skip gravity for bullets
-		} else {
-			for wellID, well := range w.GravityWells {
-				wellTrans := w.Transforms[wellID]
-				if wellTrans == nil {
-					continue
-				}
+		applyForces(id, w)
+		integrate(phys, trans)
+		enforceBoundaries(trans)
+		handleCollisions(id, w)
+	}
+}
 
-				delta := core.VecToWrapped(trans.Position, wellTrans.Position)
-				dx, dy := delta.X, delta.Y
+func applyForces(id core.Entity, w *world.World) {
+	phys := w.Physics[id]
+	trans := w.Transforms[id]
 
-				d := math.Sqrt(dx*dx + dy*dy)
-				if d < 10 {
-					d = 10
-				}
+	// Bullets are modeled as high-energy particles unaffected by gravitational curvature
+	if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
+		return
+	}
 
-				force := (well.Mass * 500) / (d * d)
-				if force > 2.0 {
-					force = 2.0
-				}
+	for wellID, well := range w.GravityWells {
+		wellTrans, ok := w.Transforms[wellID]
+		if !ok || well == nil {
+			continue
+		}
 
-				if phys.GravityMultiplier > 0 {
-					force *= phys.GravityMultiplier
-				}
+		delta := core.VecToWrapped(trans.Position, wellTrans.Position)
+		d := math.Max(10, math.Sqrt(delta.X*delta.X+delta.Y*delta.Y))
 
-				phys.Acceleration.X += (dx / d) * force
-				phys.Acceleration.Y += (dy / d) * force
+		// Standard inverse-square law for orbital mechanics
+		force := (well.Mass * 500) / (d * d)
+		force = math.Min(2.0, force)
+
+		if phys.GravityMultiplier > 0 {
+			force *= phys.GravityMultiplier
+		}
+
+		phys.Acceleration.X += (delta.X / d) * force
+		phys.Acceleration.Y += (delta.Y / d) * force
+	}
+}
+
+func integrate(phys *components.Physics, trans *components.Transform) {
+	// Semi-implicit Euler provides better energy conservation than standard Euler
+	phys.Velocity.X += phys.Acceleration.X
+	phys.Velocity.Y += phys.Acceleration.Y
+	phys.Velocity.X *= phys.Friction
+	phys.Velocity.Y *= phys.Friction
+
+	// Speed clamping prevents 'tunnelling' through thin geometry at high velocities
+	speed := math.Sqrt(phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y)
+	if speed > phys.MaxSpeed {
+		scale := phys.MaxSpeed / speed
+		phys.Velocity.X *= scale
+		phys.Velocity.Y *= scale
+	}
+
+	trans.Position.X += phys.Velocity.X
+	trans.Position.Y += phys.Velocity.Y
+	
+	phys.Acceleration.X = 0
+	phys.Acceleration.Y = 0
+}
+
+func enforceBoundaries(trans *components.Transform) {
+	// Toroidal topology ensures a boundless play area without edge-case logic
+	if trans.Position.X < 0 { trans.Position.X += core.ScreenWidth }
+	if trans.Position.X >= core.ScreenWidth { trans.Position.X -= core.ScreenWidth }
+	if trans.Position.Y < 0 { trans.Position.Y += core.ScreenHeight }
+	if trans.Position.Y >= core.ScreenHeight { trans.Position.Y -= core.ScreenHeight }
+}
+
+func handleCollisions(id core.Entity, w *world.World) {
+	trans := w.Transforms[id]
+	phys := w.Physics[id]
+	tag, hasTag := w.Tags[id]
+
+	// Wall Collisions
+	entSize := 10.0
+	for wallID, wall := range w.Walls {
+		if wall == nil || wall.IsDestroyed {
+			continue
+		}
+		wallTrans, ok := w.Transforms[wallID]
+		if !ok {
+			continue
+		}
+
+		if math.Abs(trans.Position.X-wallTrans.Position.X) < (entSize/2+wall.Size/2) &&
+			math.Abs(trans.Position.Y-wallTrans.Position.Y) < (entSize/2+wall.Size/2) {
+
+			if hasTag && tag.Name == "bullet" {
+				destroyEntity(id, w)
+				return
+			}
+
+			// Inelastic collision response
+			phys.Velocity.X = 0
+			phys.Velocity.Y = 0
+			if wall.Destructible {
+				wall.IsDestroyed = true
 			}
 		}
+	}
 
-		phys.Velocity.X += phys.Acceleration.X
-		phys.Velocity.Y += phys.Acceleration.Y
-		phys.Velocity.X *= phys.Friction
-		phys.Velocity.Y *= phys.Friction
-
-		// Clamp velocity
-		speed := math.Sqrt(phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y)
-		if speed > phys.MaxSpeed {
-			scale := phys.MaxSpeed / speed
-			phys.Velocity.X *= scale
-			phys.Velocity.Y *= scale
-		}
-		
-		// Reset acceleration
-		phys.Acceleration.X = 0
-		phys.Acceleration.Y = 0
-
-		// Update Position
-		trans.Position.X += phys.Velocity.X
-		trans.Position.Y += phys.Velocity.Y
-
-		// Wrap position
-		if trans.Position.X < 0 {
-			trans.Position.X += core.ScreenWidth
-		}
-		if trans.Position.X >= core.ScreenWidth {
-			trans.Position.X -= core.ScreenWidth
-		}
-		if trans.Position.Y < 0 {
-			trans.Position.Y += core.ScreenHeight
-		}
-		if trans.Position.Y >= core.ScreenHeight {
-			trans.Position.Y -= core.ScreenHeight
-		}
-		
-		// Wall Collision
-		entSize := 10.0
-		for wallID, wall := range w.Walls {
-			if wall.IsDestroyed {
-				continue
-			}
-			wallTrans := w.Transforms[wallID]
-			if wallTrans == nil {
-				continue
-			}
-			
-			// Simple collision
-			if math.Abs(trans.Position.X - wallTrans.Position.X) < (entSize/2 + wall.Size/2) &&
-			   math.Abs(trans.Position.Y - wallTrans.Position.Y) < (entSize/2 + wall.Size/2) {
-				
-				// If this is a bullet, destroy it silently
-				if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
-					delete(w.Physics, id)
-					delete(w.Renders, id)
-					delete(w.Transforms, id)
-					delete(w.Tags, id)
-					return // Stop processing this entity
-				}
-
-				phys.Velocity.X = 0
-				phys.Velocity.Y = 0
-				
-				if wall.Destructible {
-					wall.IsDestroyed = true
-				}
-			}
-		}
-		
-		// Bullet vs Spectre Collision
-		if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
-			for specID, specTag := range w.Tags {
-				if specTag.Name == "spectre" {
-					specTrans := w.Transforms[specID]
-					specPhys := w.Physics[specID]
-					if specTrans != nil && specPhys != nil {
-						dist := core.DistWrapped(trans.Position, specTrans.Position)
-						if dist < 20 { 
-														// Increase Spectre's GravityMultiplier
-														specPhys.GravityMultiplier += 0.5 
-														w.Audio.Play("boom") // Or distinct hit sound
-														
-														// Juice: Screen Shake
-														w.ScreenShake += 8.0
-							
-														delete(w.Physics, id)						}
+	// Bullet-Specific Logic
+	if hasTag && tag.Name == "bullet" {
+		for specID, specTag := range w.Tags {
+			if specTag.Name == "spectre" {
+				specTrans, okT := w.Transforms[specID]
+				specPhys, okP := w.Physics[specID]
+				if okT && okP {
+					if core.DistWrapped(trans.Position, specTrans.Position) < 20 {
+						// Absorbing kinetic energy increases the spectre's mass/gravity susceptibility
+						specPhys.GravityMultiplier += 0.5
+						w.Audio.Play("boom")
+						w.ScreenShake += 8.0
+						destroyEntity(id, w)
+						return
 					}
 				}
 			}
 		}
 	}
 }
+
+func destroyEntity(id core.Entity, w *world.World) {
+	// Deferred deletion logic is handled by component map removal
+	delete(w.Physics, id)
+	delete(w.Renders, id)
+	delete(w.Transforms, id)
+	delete(w.Tags, id)
+	delete(w.Lifetimes, id)
+}
+
