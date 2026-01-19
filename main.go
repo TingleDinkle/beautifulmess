@@ -167,7 +167,7 @@ func (g *Game) LoadLevel(idx int) {
 	}
 	w.AIs[g.RunnerID] = &components.AI{ScriptName: "runner.lua"}
 	w.InputControlleds[g.RunnerID] = &components.InputControlled{}
-	w.ProjectileEmitters[g.RunnerID] = &components.ProjectileEmitter{Interval: 0.4}
+	w.ProjectileEmitters[g.RunnerID] = &components.ProjectileEmitter{Interval: 1.0}
 
 	w.AIs[g.SpectreID].TargetID = int(g.RunnerID)
 	w.AIs[g.RunnerID].TargetID = int(g.SpectreID)

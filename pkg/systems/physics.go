@@ -92,6 +92,15 @@ func SystemPhysics(w *world.World) {
 			if math.Abs(trans.Position.X - wallTrans.Position.X) < (entSize/2 + wall.Size/2) &&
 			   math.Abs(trans.Position.Y - wallTrans.Position.Y) < (entSize/2 + wall.Size/2) {
 				
+				// If this is a bullet, destroy it silently
+				if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
+					delete(w.Physics, id)
+					delete(w.Renders, id)
+					delete(w.Transforms, id)
+					delete(w.Tags, id)
+					return // Stop processing this entity
+				}
+
 				phys.Velocity.X = 0
 				phys.Velocity.Y = 0
 				
@@ -102,30 +111,22 @@ func SystemPhysics(w *world.World) {
 		}
 		
 		// Bullet vs Spectre Collision
-		// Check if this entity is a bullet (has "bullet" tag)
-		// Actually, tags are in w.Tags.
 		if tag, ok := w.Tags[id]; ok && tag.Name == "bullet" {
-			// Check collision with Spectre
 			for specID, specTag := range w.Tags {
 				if specTag.Name == "spectre" {
 					specTrans := w.Transforms[specID]
 					specPhys := w.Physics[specID]
 					if specTrans != nil && specPhys != nil {
-						// Check dist
 						dist := core.DistWrapped(trans.Position, specTrans.Position)
-						if dist < 20 { // Hit radius
-							// Hit!
-							// Increase Spectre's GravityMultiplier
+						if dist < 20 { 
 							specPhys.GravityMultiplier += 0.5 
-							w.Audio.Play("boom") // Or distinct hit sound
+							w.Audio.Play("boom") 
 							
-							// Destroy Bullet
 							delete(w.Physics, id)
 							delete(w.Renders, id)
 							delete(w.Transforms, id)
 							delete(w.Tags, id)
-							// Do not continue processing this entity
-							break
+							return // Stop processing this entity
 						}
 					}
 				}
