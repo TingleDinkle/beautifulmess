@@ -1,34 +1,26 @@
-# A Beautiful Mess: Reunion
+# A Beautiful Mess
 
-An engine for generating catharsis at 60 FPS.
+This is a little world I'm building for you. It's a game about chasing memories, catching what's lost, and finding our way back to each other through the noise.
 
-## Controls
+## How to Play
 
-*   **Movement:** Arrow Keys or WASD
-*   **Blitz Dash (Overdrive):** Hold `Shift` or `C`
-*   **Shooting:** Automatic (Interval based on level)
-*   **Pause:** `P` or `Esc`
-*   **Memory Fragment Navigation:** `A/D` or Left/Right (while in popup)
-*   **Advance/Recover:** `Space` (while in popup)
+*   **Move around:** Use the **Arrow Keys** or **WASD**.
+*   **Dash/Boost:** Hold **Shift** if you need to catch up fast.
+*   **Pause:** Press **P** or **Esc** if you need a break.
 
-## Mechanics
+## The Goal
 
-1.  **Reunion:** To complete a level, you must trap the **Spectre** near a **Gravity Well** while being in close proximity to her yourself.
-2.  **Gravity Susceptibility:** The Spectre actively avoids singularities. Shoot her with bullets to increase her mass and drag her toward the center.
-3.  **Ricochets:** Bullets bounce off all walls. Use the environment to land complex shots.
-4.  **Shatter:** Bricks and data-structures can be destroyed by your projectiles.
-5.  **Toroidal Void:** The world wraps. Leaving the left side brings you back on the right.
+You are the **Runner**. She is the **Spectre**. 
 
-## Development
+She's a bit shy and will try to swish away if you get too close. To move forward, you have to help her get "caught" near one of the **Gravity Wells** (the dark swirling spots). 
 
-Requires Go 1.21+ and Ebitengine dependencies.
+When she's trapped there and you're close enough to reach out, you'll recover a **Memory Fragment**. Use **A/D** to flip through the photos in the memory, and press **Space** when you're ready to move to the next part of the story.
 
-```powershell
-go build .
-./beautifulmess.exe
-```
+## A Few Tips
 
-Or use the development runner:
-```powershell
-./run.ps1
-```
+*   **Mass & Gravity:** The Spectre doesn't like the gravity wells. If you shoot her, she gets a little "heavier" and it's harder for her to escape the pull.
+*   **Bouncing:** Your shots bounce off the walls. Use that to your advantage!
+*   **The Wrap:** The world has no edges. If you go off one side, you'll just pop out on the other.
+
+---
+*Built with love and a lot of late-night code.*
