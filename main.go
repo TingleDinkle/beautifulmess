@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color"
+	_ "image/jpeg"
 	_ "image/png"
 	"log"
 	"math"
@@ -62,7 +63,8 @@ type Game struct {
 	NebulaShader  *ebiten.Shader
 	ShaderOptions ebiten.DrawRectShaderOptions 
 	PopupRNG      *rand.Rand
-	SpriteSpectre *ebiten.Image
+	SpectreSprites map[string]*ebiten.Image
+	SpectreState   systems.SpectreVisualState
 	SpriteRunner  *ebiten.Image
 	StartTime time.Time
 	HitStop     float64
@@ -80,8 +82,9 @@ func NewGame() *Game {
 		ShaderOptions: ebiten.DrawRectShaderOptions{Uniforms: make(map[string]interface{})},
 		PopupRNG:      rand.New(rand.NewSource(0)),
 		StartTime:     time.Now(),
-		SpriteSpectre: generateGothicSprite(),
+		SpectreState:  systems.SpectreVisualState{State: "normal"},
 	}
+	g.SpectreSprites = systems.LoadSpectreSet("assets/normal.png", "assets/angy.png", "assets/kewt.png")
 	g.SpriteRunner = generateAstroSprite()
 	g.World.Audio.LoadFile("shoot", "assets/shoot.wav")
 	g.World.Audio.LoadFile("boom", "assets/boom.wav")
@@ -113,12 +116,20 @@ func (g *Game) spawnLevelEntities(lvl level.Level) {
 		w.Tags[id] = &components.Tag{Name: "gravity_well"}
 	}
 	for _, wall := range lvl.Walls { spawnWall(w, wall.X, wall.Y, wall.Destructible) }
+	
 	g.SpectreID = w.CreateEntity()
 	w.Tags[g.SpectreID] = &components.Tag{Name: "spectre"}
 	w.Transforms[g.SpectreID] = &components.Transform{Position: lvl.StartP2}
 	w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: 0.96, Mass: 1.0, GravityMultiplier: 3.5}
-	w.Renders[g.SpectreID] = &components.Render{Sprite: g.SpriteSpectre, Color: color.RGBA{255, 50, 50, 255}, Glow: true}
+	
+	// Dynamic scaling to maintain photo integrity while fitting the world
+	specW, _ := g.SpectreSprites["normal"].Size()
+	sScale := 80.0 / float64(specW)
+	if sScale > 1.5 { sScale = 1.5 }
+	
+	w.Renders[g.SpectreID] = &components.Render{Sprite: g.SpectreSprites["normal"], Color: color.RGBA{255, 255, 255, 255}, Glow: true, Scale: sScale}
 	w.AIs[g.SpectreID] = &components.AI{ScriptName: "spectre.lua"}
+	
 	g.RunnerID = w.CreateEntity()
 	w.Tags[g.RunnerID] = &components.Tag{Name: "runner"}
 	w.Transforms[g.RunnerID] = &components.Transform{Position: lvl.StartP1}
@@ -209,6 +220,7 @@ func (g *Game) updateActive() error {
 	lvl := &g.Levels[g.CurrentLevel]
 	systems.SystemInput(g.World)
 	systems.SystemAI(g.World, lvl)
+	systems.SystemSpectreVisuals(g.World, &g.SpectreState, g.SpectreID, g.SpectreSprites)
 	systems.SystemPhysics(g.World)
 	systems.SystemEntropy(g.World, g.FrostMask)
 	systems.SystemProjectileEmitter(g.World)

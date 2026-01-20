@@ -1,7 +1,14 @@
 package systems
 
 import (
+	"image"
 	"image/color"
+	_ "image/jpeg"
+	_ "image/png"
+	"log"
+	"math"
+	"math/rand"
+	"os"
 
 	"beautifulmess/pkg/core"
 	"beautifulmess/pkg/level"
@@ -10,6 +17,79 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
+
+func LoadSpectreSet(normal, angy, kewt string) map[string]*ebiten.Image {
+	set := make(map[string]*ebiten.Image)
+	set["normal"] = LoadAndProcessSpectre(normal)
+	set["angy"] = LoadAndProcessSpectre(angy)
+	set["kewt"] = LoadAndProcessSpectre(kewt)
+	return set
+}
+
+func LoadAndProcessSpectre(path string) *ebiten.Image {
+	f, err := os.Open(path)
+	if err != nil {
+		log.Printf("failed to open %s: %v", path, err)
+		return nil
+	}
+	defer f.Close()
+
+	srcImg, _, err := image.Decode(f)
+	if err != nil {
+		log.Printf("failed to decode %s: %v", path, err)
+		return nil
+	}
+
+	const targetRes = 128
+	res := image.NewRGBA(image.Rect(0, 0, targetRes, targetRes))
+	srcB := srcImg.Bounds()
+	sw, sh := float64(srcB.Dx()), float64(srcB.Dy())
+	
+	const referenceSize = 600.0
+	fitScale := float64(targetRes) / referenceSize
+	destW, destH := sw*fitScale, sh*fitScale
+	offsetX, offsetY := (float64(targetRes)-destW)/2.0, (float64(targetRes)-destH)/2.0
+
+	for y := 0; y < targetRes; y++ {
+		glitchOffset := 0.0
+		if rand.Float64() < 0.005 { glitchOffset = rand.NormFloat64() * 2.0 }
+
+		for x := 0; x < targetRes; x++ {
+			srcX := (float64(x) - offsetX + glitchOffset) / fitScale
+			srcY := (float64(y) - offsetY) / fitScale
+
+			if srcX < 0 || srcY < 0 || srcX >= sw || srcY >= sh { continue }
+
+			c := color.RGBAModel.Convert(srcImg.At(int(srcX)+srcB.Min.X, int(srcY)+srcB.Min.Y)).(color.RGBA)
+			if c.A < 10 { continue }
+			
+			lum := 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+			r, g, bl := float64(c.R), float64(c.G), float64(c.B)
+			
+			if lum < 128 { r *= 1.1; g *= 0.8; bl *= 0.8 }
+			if y%2 == 0 { r *= 0.92; g *= 0.92; bl *= 0.92 }
+
+			nx := (float64(x) - targetRes/2.0) / (targetRes / 2.0)
+			ny := (float64(y) - targetRes/2.0) / (targetRes / 2.0)
+			dist := math.Sqrt(nx*nx + ny*ny)
+			
+			alpha := float64(c.A)
+			if dist > 0.4 {
+				fade := 1.0 - (dist-0.4)/0.6
+				if fade < 0 { fade = 0 }
+				alpha *= fade * fade
+			}
+
+			res.Set(x, y, color.RGBA{
+				R: uint8(math.Min(255, r)),
+				G: uint8(math.Min(255, g)),
+				B: uint8(math.Min(255, bl)),
+				A: uint8(alpha),
+			})
+		}
+	}
+	return ebiten.NewImageFromImage(res)
+}
 
 func DrawLevel(screen *ebiten.Image, w *world.World, lvl *level.Level, spectrePos core.Vector2, shake core.Vector2) {
 	// Abstracting level-layer rendering ensures that environmental mechanics (like gravity) are visually prioritized
