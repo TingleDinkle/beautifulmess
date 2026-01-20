@@ -9,11 +9,17 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
+// SpectreVisualState tracks the high-level emotional state of the Spectre entity.
+// This is separated from the Physics state to allow for visual smoothing and transitions
+// that don't interfere with the deterministic simulation.
 type SpectreVisualState struct {
 	State string
 	Timer float64
 }
 
+// SystemSpectreVisuals manages the emotional reactivity of the Spectre.
+// It bridges the gap between raw physics data (velocity/acceleration) and 
+// narrative-driven visual feedback (the 3 source photos).
 func SystemSpectreVisuals(w *world.World, gState *SpectreVisualState, spectreID core.Entity, sprites map[string]*ebiten.Image) {
 	if int(spectreID) >= len(w.Renders) || w.Renders[spectreID] == nil { return }
 	render := w.Renders[spectreID]
@@ -23,29 +29,33 @@ func SystemSpectreVisuals(w *world.World, gState *SpectreVisualState, spectreID 
 
 	targetState := "normal"
 	
-	// Optimization: Use Squared Distance to avoid math.Sqrt in the hot loop
+	// We prioritize the "Kewt" state as it represents a total loss of agency within a well.
+	// 30px buffer provides a 'gravity-well' event horizon for the visual transition.
 	const kewtRangeSq = 30.0 * 30.0
 	for id, well := range w.GravityWells {
 		if well == nil { continue }
 		wellTrans := w.Transforms[id]
 		if wellTrans == nil { continue }
 		
+		// Squared distance avoids the computationally expensive math.Sqrt in the hot update path.
 		if core.DistSqWrapped(trans.Position, wellTrans.Position) < (well.Radius*well.Radius + kewtRangeSq) {
 			targetState = "kewt"
 			break
 		}
 	}
 
+	// "Angy" state is a byproduct of extreme physical exertion (the Swish/Dodging behavior).
 	if targetState == "normal" && phys != nil {
-		// Use squared velocity for the check
 		velSq := phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y
 		accSq := phys.Acceleration.X*phys.Acceleration.X + phys.Acceleration.Y*phys.Acceleration.Y
-		if velSq > 56.25 || accSq > 1.21 { // 7.5^2 and 1.1^2
+		// Thresholds (7.5 for vel, 1.1 for acc) are tuned to catch active player-evasion maneuvers.
+		if velSq > 56.25 || accSq > 1.21 { 
 			targetState = "angy"
 		}
 	}
 
-	// Hysteresis logic
+	// State Hysteresis: We force a minimum dwell-time in "angy" and "kewt" to prevent
+	// sprite flickering when physics values oscillate rapidly around the thresholds.
 	if targetState != gState.State {
 		if gState.Timer <= 0 {
 			gState.State = targetState
@@ -54,7 +64,7 @@ func SystemSpectreVisuals(w *world.World, gState *SpectreVisualState, spectreID 
 	}
 	if gState.Timer > 0 { gState.Timer -= 1.0 / 60.0 }
 
-	// Apply visuals
+	// Sprite selection is now stable thanks to the uniform 128x128 resolution forced at load-time.
 	render.Sprite = sprites[gState.State]
 	
 	specW, _ := render.Sprite.Size()
@@ -64,16 +74,19 @@ func SystemSpectreVisuals(w *world.World, gState *SpectreVisualState, spectreID 
 	
 	switch gState.State {
 	case "angy":
+		// Red tinting is subtle to preserve the integrity of the original photo.
 		targetColor = color.RGBA{255, 230, 230, 255}
 		render.Glow = true
 	case "kewt":
+		// Shrinking the scale slightly simulates the compression of being 'trapped'.
 		targetScale = baseScale * 0.95
 		render.Glow = false
 	default:
 		render.Glow = true
 	}
 
-	// Professional-grade lerping for smooth transitions
+	// Exponential smoothing (lerp) ensures that state transitions feel like organic
+	// emotional shifts rather than binary code swaps.
 	const lerpSpeed = 0.1
 	render.Scale += (targetScale - render.Scale) * lerpSpeed
 	
