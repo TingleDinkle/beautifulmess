@@ -34,6 +34,8 @@ func (as *AudioSystem) init() {
 	as.addPool("chime", genSine(880, 0.5))
 	as.addPool("drone", genSine(110, 2.0))
 	as.addPool("spectre_dash", genBreathyNoise(0.5))
+	as.addPool("tick", genSine(2000, 0.015)) // Fast typewriter tick
+	as.addPool("blip", genSine(440, 0.05))   // UI navigation blip
 }
 
 func (as *AudioSystem) addPool(name string, b []byte) {

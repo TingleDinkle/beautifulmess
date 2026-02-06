@@ -81,6 +81,7 @@ type Game struct {
 	HitStop     float64
 	TitleTimer  float64
 	StartAnimation float64
+	TypewriterChars int
 }
 
 func NewGame() *Game {
@@ -195,36 +196,66 @@ func generateAstroSprite() *ebiten.Image {
 
 func (g *Game) Update() error {
 	g.handleInput()
+
 	switch g.State {
 	case StateTitle:
-		g.TitleTimer += 1.0 / 60.0
-		return g.updateTitle()
-	case StateTransitioning:
-		return g.updateTransition()
+		return g.updateTitleState()
+	case StatePlaying:
+		return g.updateActiveState()
 	case StatePaused:
-		return g.updatePaused()
-	default:
-		return g.updateActive()
+		return g.updatePausedState()
+	case StateTransitioning:
+		return g.updateTransitionState()
 	}
+	return nil
 }
 
-func (g *Game) updateTitle() error {
+func (g *Game) updateTitleState() error {
+	g.TitleTimer += 1.0 / 60.0
+
+	// Typewriter audio feedback logic
+	const revealSpeed = 22.0
+	text1 := "Dear Stella, I made this game for you."
+	text2 := "Enjoy, our love."
+
+	chars1 := int(g.TitleTimer * revealSpeed)
+	if chars1 > len(text1) {
+		chars1 = len(text1)
+	}
+	chars2 := 0
+	if g.TitleTimer > float64(len(text1))/revealSpeed+0.8 {
+		chars2 = int((g.TitleTimer - (float64(len(text1))/revealSpeed + 0.8)) * revealSpeed)
+		if chars2 > len(text2) {
+			chars2 = len(text2)
+		}
+	}
+
+	if chars1+chars2 > g.TypewriterChars {
+		g.World.Audio.Play("tick")
+		g.TypewriterChars = chars1 + chars2
+	}
+
+	// Menu Navigation
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
 		g.MenuIndex = (g.MenuIndex - 1 + 5) % 5
+		g.World.Audio.Play("blip")
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
 		g.MenuIndex = (g.MenuIndex + 1) % 5
+		g.World.Audio.Play("blip")
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
-		if g.MenuIndex == 2 { // Volume
+		if g.MenuIndex == 2 { // Volume adjustment
 			g.MasterVolume = math.Max(0, g.MasterVolume-0.05)
 			g.World.Audio.SetVolume(g.MasterVolume)
+			g.World.Audio.Play("blip")
 		}
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
-		if g.MenuIndex == 2 { // Volume
+		if g.MenuIndex == 2 { // Volume adjustment
 			g.MasterVolume = math.Min(1.0, g.MasterVolume+0.05)
 			g.World.Audio.SetVolume(g.MasterVolume)
+			g.World.Audio.Play("blip")
 		}
 	}
 
@@ -234,16 +265,19 @@ func (g *Game) updateTitle() error {
 			g.State = StatePlaying
 			g.LoadLevel(0)
 			g.triggerSpitOut()
-		case 1: // Mode
+		case 1: // Difficulty Mode
 			g.EasyMode = !g.EasyMode
-		case 2: // Volume (clicking does nothing special, just feedback)
+			g.World.Audio.Play("blip")
+		case 2: // Volume indicator
 			g.World.Audio.Play("chime")
-		case 3: // Fullscreen
+		case 3: // Display toggle
 			ebiten.SetFullscreen(!ebiten.IsFullscreen())
-		case 4: // Quit
+			g.World.Audio.Play("blip")
+		case 4: // Exit
 			return ebiten.Termination
 		}
 	}
+
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		return ebiten.Termination
 	}
@@ -288,6 +322,7 @@ func (g *Game) handleInput() {
 				if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.Popup == nil {
 					g.State = StateTitle
 					g.TitleTimer = 0
+					g.TypewriterChars = 0
 					return
 				}
 				g.State = StatePlaying
@@ -299,10 +334,14 @@ func (g *Game) handleInput() {
 	}
 }
 
-func (g *Game) updatePaused() error {
+func (g *Game) updatePausedState() error {
 	if g.Popup != nil {
-		if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) { g.PopupPhotoIndex = (g.PopupPhotoIndex + 1) % len(g.Popup.Photos) }
-		if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) { g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos) }
+		if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
+			g.PopupPhotoIndex = (g.PopupPhotoIndex + 1) % len(g.Popup.Photos)
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
+			g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos)
+		}
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 			g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
 			g.TransitionTime = 0
@@ -311,12 +350,13 @@ func (g *Game) updatePaused() error {
 		if inpututil.IsKeyJustPressed(ebiten.KeyM) {
 			g.State = StateTitle
 			g.TitleTimer = 0
+			g.TypewriterChars = 0
 		}
 	}
 	return nil
 }
 
-func (g *Game) updateTransition() error {
+func (g *Game) updateTransitionState() error {
 	g.TransitionTime += 1.0 / 120.0
 	if g.TransitionTime >= 1.0 {
 		g.State = StatePlaying
@@ -326,16 +366,23 @@ func (g *Game) updateTransition() error {
 	return nil
 }
 
-func (g *Game) updateActive() error {
-	if g.HitStop > 0 { g.HitStop -= 1.0 / 60.0; g.World.ScreenShake *= 0.9; return nil }
+func (g *Game) updateActiveState() error {
+	if g.HitStop > 0 {
+		g.HitStop -= 1.0 / 60.0
+		g.World.ScreenShake *= 0.9
+		return nil
+	}
+
 	g.World.ScreenShake *= 0.9
-	if g.World.ScreenShake < 0.5 { g.World.ScreenShake = 0 }
+	if g.World.ScreenShake < 0.5 {
+		g.World.ScreenShake = 0
+	}
+
 	g.World.UpdateGrid()
 	lvl := &g.Levels[g.CurrentLevel]
 
 	if g.StartAnimation > 0 {
 		g.StartAnimation -= 1.0 / 60.0
-		// Skip input during spit out
 	} else {
 		systems.SystemInput(g.World)
 	}
@@ -346,11 +393,13 @@ func (g *Game) updateActive() error {
 	systems.SystemEntropy(g.World, g.FrostMask)
 	systems.SystemProjectileEmitter(g.World)
 	systems.SystemLifetime(g.World)
+
 	g.World.Particles.Update()
-	if g.StartAnimation > 0 {
-		return nil
+
+	if g.StartAnimation <= 0 {
+		return g.checkWinCondition(lvl)
 	}
-	return g.checkWinCondition(lvl)
+	return nil
 }
 
 func (g *Game) checkWinCondition(lvl *level.Level) error {
@@ -582,5 +631,6 @@ func (g *Game) Layout(w, h int) (int, int) { return core.ScreenWidth, core.Scree
 func main() {
 	ebiten.SetWindowSize(core.ScreenWidth, core.ScreenHeight)
 	ebiten.SetWindowTitle("Beautiful Mess: The Final Code")
+	ebiten.SetFullscreen(true)
 	if err := ebiten.RunGame(NewGame()); err != nil { panic(err) }
 }
