@@ -11,19 +11,22 @@ import (
 	"beautifulmess/pkg/world"
 )
 
-func SystemPhysics(w *world.World, easyMode bool) {
+func SystemPhysics(w *world.World, easyMode bool, startAnimation bool) {
 	// Cache-friendly sequential iteration over component slices minimizes CPU pipeline stalls
 	for id, phys := range w.Physics {
 		if phys == nil { continue }
 		trans := w.Transforms[id]
 		if trans == nil { continue }
 
-		if easyMode && w.Tags[id] != nil && w.Tags[id].Name == "bullet" {
+		if !startAnimation && easyMode && w.Tags[id] != nil && w.Tags[id].Name == "bullet" {
 			applyHoming(core.Entity(id), w)
 		}
 
-		applyForces(core.Entity(id), w)
-		integrate(phys, trans)
+		if !startAnimation {
+			applyForces(core.Entity(id), w)
+		}
+		
+		integrate(phys, trans, startAnimation)
 		core.WrapPosition(&trans.Position)
 		handleCollisions(core.Entity(id), w)
 	}
@@ -87,18 +90,20 @@ func applyForces(id core.Entity, w *world.World) {
 
 
 
-func integrate(phys *components.Physics, trans *components.Transform) {
+func integrate(phys *components.Physics, trans *components.Transform, bypassClamping bool) {
 	// Semi-implicit Euler integration preserves system energy better than standard Euler
 	phys.Velocity.X += phys.Acceleration.X
 	phys.Velocity.Y += phys.Acceleration.Y
 	phys.Velocity.X *= phys.Friction
 	phys.Velocity.Y *= phys.Friction
 
-	speed := math.Sqrt(phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y)
-	if speed > phys.MaxSpeed {
-		scale := phys.MaxSpeed / speed
-		phys.Velocity.X *= scale
-		phys.Velocity.Y *= scale
+	if !bypassClamping {
+		speed := math.Sqrt(phys.Velocity.X*phys.Velocity.X + phys.Velocity.Y*phys.Velocity.Y)
+		if speed > phys.MaxSpeed {
+			scale := phys.MaxSpeed / speed
+			phys.Velocity.X *= scale
+			phys.Velocity.Y *= scale
+		}
 	}
 
 	trans.Position.X += phys.Velocity.X

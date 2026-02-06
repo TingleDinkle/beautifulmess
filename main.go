@@ -57,6 +57,8 @@ type Game struct {
 	World     *world.World
 	State     GameState
 	EasyMode  bool
+	MasterVolume float64
+	MenuIndex    int
 	RunnerID  core.Entity
 	SpectreID core.Entity
 	Levels       []level.Level
@@ -77,6 +79,8 @@ type Game struct {
 	SpriteRunner  *ebiten.Image
 	StartTime time.Time
 	HitStop     float64
+	TitleTimer  float64
+	StartAnimation float64
 }
 
 func NewGame() *Game {
@@ -86,6 +90,7 @@ func NewGame() *Game {
 	g := &Game{
 		World:         world.NewWorld(),
 		State:         StateTitle,
+		MasterVolume:  0.5,
 		Levels:        level.InitLevels(),
 		FrostMask:     image.NewRGBA(image.Rect(0, 0, core.MistWidth, core.MistHeight)),
 		NebulaShader:  s,
@@ -98,6 +103,7 @@ func NewGame() *Game {
 	g.SpriteRunner = generateAstroSprite()
 	g.World.Audio.LoadFile("shoot", "assets/shoot.wav")
 	g.World.Audio.LoadFile("boom", "assets/boom.wav")
+	g.World.Audio.SetVolume(g.MasterVolume)
 	c := color.RGBA{10, 5, 20, 240}
 	for i := 0; i < len(g.FrostMask.Pix); i += 4 {
 		g.FrostMask.Pix[i], g.FrostMask.Pix[i+1], g.FrostMask.Pix[i+2], g.FrostMask.Pix[i+3] = c.R, c.G, c.B, c.A
@@ -191,13 +197,8 @@ func (g *Game) Update() error {
 	g.handleInput()
 	switch g.State {
 	case StateTitle:
-		if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
-			g.State = StatePlaying
-		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyE) {
-			g.EasyMode = !g.EasyMode
-		}
-		return nil
+		g.TitleTimer += 1.0 / 60.0
+		return g.updateTitle()
 	case StateTransitioning:
 		return g.updateTransition()
 	case StatePaused:
@@ -207,10 +208,88 @@ func (g *Game) Update() error {
 	}
 }
 
+func (g *Game) updateTitle() error {
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+		g.MenuIndex = (g.MenuIndex - 1 + 5) % 5
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+		g.MenuIndex = (g.MenuIndex + 1) % 5
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
+		if g.MenuIndex == 2 { // Volume
+			g.MasterVolume = math.Max(0, g.MasterVolume-0.05)
+			g.World.Audio.SetVolume(g.MasterVolume)
+		}
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
+		if g.MenuIndex == 2 { // Volume
+			g.MasterVolume = math.Min(1.0, g.MasterVolume+0.05)
+			g.World.Audio.SetVolume(g.MasterVolume)
+		}
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		switch g.MenuIndex {
+		case 0: // Start
+			g.State = StatePlaying
+			g.LoadLevel(0)
+			g.triggerSpitOut()
+		case 1: // Mode
+			g.EasyMode = !g.EasyMode
+		case 2: // Volume (clicking does nothing special, just feedback)
+			g.World.Audio.Play("chime")
+		case 3: // Fullscreen
+			ebiten.SetFullscreen(!ebiten.IsFullscreen())
+		case 4: // Quit
+			return ebiten.Termination
+		}
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		return ebiten.Termination
+	}
+	return nil
+}
+
+func (g *Game) triggerSpitOut() {
+	lvl := g.Levels[g.CurrentLevel]
+	wellPos := core.Vector2{X: 640, Y: 360}
+	if len(lvl.Wells) > 0 {
+		wellPos = lvl.Wells[0].Position
+	}
+
+	// Reset positions to well center with slight offset to prevent immediate collision/win
+	if t := g.World.Transforms[g.RunnerID]; t != nil {
+		t.Position = core.Vector2{X: wellPos.X - 5, Y: wellPos.Y}
+	}
+	if t := g.World.Transforms[g.SpectreID]; t != nil {
+		t.Position = core.Vector2{X: wellPos.X + 5, Y: wellPos.Y}
+	}
+
+	// Explosive outward velocity - bypassing MaxSpeed in SystemPhysics
+	if p := g.World.Physics[g.RunnerID]; p != nil {
+		p.Velocity = core.Vector2{X: -35, Y: -15}
+	}
+	if p := g.World.Physics[g.SpectreID]; p != nil {
+		p.Velocity = core.Vector2{X: 35, Y: 15}
+	}
+
+	g.StartAnimation = 1.5
+	g.World.ScreenShake = 15.0
+	g.World.Audio.Play("boom")
+}
+
 func (g *Game) handleInput() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF11) {
+		ebiten.SetFullscreen(!ebiten.IsFullscreen())
+	}
 	if g.State == StatePlaying || g.State == StatePaused {
 		if inpututil.IsKeyJustPressed(ebiten.KeyP) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			if g.State == StatePaused {
+				if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.Popup == nil {
+					g.State = StateTitle
+					g.TitleTimer = 0
+					return
+				}
 				g.State = StatePlaying
 				g.Popup = nil
 			} else {
@@ -227,6 +306,11 @@ func (g *Game) updatePaused() error {
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 			g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
 			g.TransitionTime = 0
+		}
+	} else {
+		if inpututil.IsKeyJustPressed(ebiten.KeyM) {
+			g.State = StateTitle
+			g.TitleTimer = 0
 		}
 	}
 	return nil
@@ -248,14 +332,24 @@ func (g *Game) updateActive() error {
 	if g.World.ScreenShake < 0.5 { g.World.ScreenShake = 0 }
 	g.World.UpdateGrid()
 	lvl := &g.Levels[g.CurrentLevel]
-	systems.SystemInput(g.World)
+
+	if g.StartAnimation > 0 {
+		g.StartAnimation -= 1.0 / 60.0
+		// Skip input during spit out
+	} else {
+		systems.SystemInput(g.World)
+	}
+
 	systems.SystemAI(g.World, lvl)
 	systems.SystemSpectreVisuals(g.World, &g.SpectreState, g.SpectreID, g.SpectreSprites)
-	systems.SystemPhysics(g.World, g.EasyMode)
+	systems.SystemPhysics(g.World, g.EasyMode, g.StartAnimation > 0)
 	systems.SystemEntropy(g.World, g.FrostMask)
 	systems.SystemProjectileEmitter(g.World)
 	systems.SystemLifetime(g.World)
 	g.World.Particles.Update()
+	if g.StartAnimation > 0 {
+		return nil
+	}
 	return g.checkWinCondition(lvl)
 }
 
@@ -278,14 +372,19 @@ func (g *Game) checkWinCondition(lvl *level.Level) error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	shake := core.Vector2{}
-	if g.World.ScreenShake > 0 {
-		shake.X = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
-		shake.Y = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
+	switch g.State {
+	case StateTitle:
+		g.drawTitleScreen(screen)
+	default:
+		shake := core.Vector2{}
+		if g.World.ScreenShake > 0 {
+			shake.X = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
+			shake.Y = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
+		}
+		g.drawWorld(screen, shake)
+		if g.State == StateTransitioning { g.drawTransition(screen) }
+		g.drawUI(screen)
 	}
-	g.drawWorld(screen, shake)
-	if g.State == StateTransitioning { g.drawTransition(screen) }
-	g.drawUI(screen)
 }
 
 func (g *Game) drawWorld(screen *ebiten.Image, shake core.Vector2) {
@@ -327,21 +426,74 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 }
 
 func (g *Game) drawTitleScreen(screen *ebiten.Image) {
-	vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
-	bw, bh := 600.0, 300.0
+	// Pure black background
+	screen.Fill(color.Black)
+
+	bw, bh := 860.0, 480.0
 	bx, by := (float64(core.ScreenWidth)-bw)/2, (float64(core.ScreenHeight)-bh)/2
-	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 2, color.RGBA{180, 20, 40, 255}, false)
+	
+	// Colored border (Amber for warmth)
+	amber := color.RGBA{255, 176, 0, 255}
+	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 1, amber, false)
 
-	ebitenutil.DebugPrintAt(screen, "Dear Stella, I made this game for you.", int(bx)+100, int(by)+80)
-	ebitenutil.DebugPrintAt(screen, "Enjoy, our love.", int(bx)+220, int(by)+130)
-
-	ebitenutil.DebugPrintAt(screen, "[ SPACE TO START ]", int(bx)+220, int(by)+220)
-
-	modeText := "MODE: NORMAL (Press E to toggle)"
-	if g.EasyMode {
-		modeText = "MODE: EASY (Press E to toggle)"
+	// Typewriter logic
+	text1 := "Dear Stella, I made this game for you."
+	text2 := "Enjoy, our love."
+	
+	speed := 22.0 
+	charsToShow1 := int(g.TitleTimer * speed)
+	if charsToShow1 > len(text1) { charsToShow1 = len(text1) }
+	
+	ebitenutil.DebugPrintAt(screen, text1[:charsToShow1], int(bx)+140, int(by)+80)
+	
+	if g.TitleTimer > float64(len(text1))/speed + 0.8 {
+		charsToShow2 := int((g.TitleTimer - (float64(len(text1))/speed + 0.8)) * speed)
+		if charsToShow2 > len(text2) { charsToShow2 = len(text2) }
+		if charsToShow2 > 0 {
+			ebitenutil.DebugPrintAt(screen, text2[:charsToShow2], int(bx)+360, int(by)+130)
+		}
 	}
-	ebitenutil.DebugPrintAt(screen, modeText, int(bx)+180, int(by)+250)
+
+	// Menu options
+	if g.TitleTimer > 3.0 {
+		options := []string{
+			"START JOURNEY",
+			"MODE: NORMAL",
+			"VOLUME: [..........]",
+			"FULLSCREEN",
+			"QUIT TO DESKTOP",
+		}
+		if g.EasyMode { options[1] = "MODE: EASY (HOMING)" }
+		
+		// Update volume bar
+		volDots := int(g.MasterVolume * 10)
+		bar := ""
+		for i := 0; i < 10; i++ {
+			if i < volDots { bar += "#" } else { bar += "." }
+		}
+		options[2] = "VOLUME: [" + bar + "]"
+
+		for i, opt := range options {
+			y := int(by) + 240 + (i * 35)
+			prefix := "  "
+			if g.MenuIndex == i {
+				prefix = "> "
+				// Subtle blink for selection
+				if math.Sin(g.TitleTimer*12) > 0 {
+					ebitenutil.DebugPrintAt(screen, prefix+opt, int(bx)+320, y)
+				}
+			} else {
+				ebitenutil.DebugPrintAt(screen, prefix+opt, int(bx)+320, y)
+			}
+		}
+		
+		ebitenutil.DebugPrintAt(screen, "(W/S) NAVIGATE  (A/D) ADJUST  (SPACE) SELECT", int(bx)+240, int(by)+430)
+	}
+}
+
+func (g *Game) drawVignette(screen *ebiten.Image) {
+	w, h := float32(core.ScreenWidth), float32(core.ScreenHeight)
+	vector.StrokeRect(screen, 0, 0, w, h, 100, color.RGBA{0, 0, 0, 180}, false)
 }
 
 func (g *Game) drawPopup(screen *ebiten.Image) {
@@ -382,14 +534,15 @@ func (g *Game) renderPopupContent(screen *ebiten.Image, bx, by, bw, bh float64) 
 
 func (g *Game) drawPauseMenu(screen *ebiten.Image) {
 	vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
-	bw, bh := 400.0, 120.0
+	bw, bh := 450.0, 160.0
 	bx, by := (float64(core.ScreenWidth)-bw)/2, (float64(core.ScreenHeight)-bh)/2
 	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 2, color.RGBA{33, 33, 255, 255}, false)
-	ebitenutil.DebugPrintAt(screen, "--- PAUSED ---", int(bx)+145, int(by)+40)
-	ebitenutil.DebugPrintAt(screen, "RESUME: PRESS P", int(bx)+145, int(by)+70)
+	ebitenutil.DebugPrintAt(screen, "--- PAUSED ---", int(bx)+160, int(by)+30)
+	ebitenutil.DebugPrintAt(screen, "RESUME: PRESS P", int(bx)+160, int(by)+60)
+	ebitenutil.DebugPrintAt(screen, "RETURN TO MENU: PRESS M or ESC", int(bx)+100, int(by)+90)
 	for px := 0; px < 5; px++ {
-		vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+15, 2, color.RGBA{255, 255, 0, 255}, true)
-		vector.DrawFilledCircle(screen, float32(bx)+float32(px*80)+40, float32(by)+float32(bh)-15, 2, color.RGBA{255, 255, 0, 255}, true)
+		vector.DrawFilledCircle(screen, float32(bx)+float32(px*90)+45, float32(by)+15, 2, color.RGBA{255, 255, 0, 255}, true)
+		vector.DrawFilledCircle(screen, float32(bx)+float32(px*90)+45, float32(by)+float32(bh)-15, 2, color.RGBA{255, 255, 0, 255}, true)
 	}
 }
 

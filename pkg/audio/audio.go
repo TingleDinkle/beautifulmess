@@ -76,6 +76,14 @@ func (as *AudioSystem) Play(name string) {
 	}
 }
 
+func (as *AudioSystem) SetVolume(v float64) {
+	for _, pool := range as.Pools {
+		for _, p := range pool {
+			p.SetVolume(v)
+		}
+	}
+}
+
 
 func genBlitz(duration float64) []byte {
 	// A sub-bass 'thump' combined with a clean aerodynamic sweep simulates extreme velocity displacement
