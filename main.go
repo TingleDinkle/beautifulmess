@@ -44,17 +44,26 @@ func Fragment(position vec4, texCoord vec2, color vec4) vec4 {
 }
 `)
 
+type GameState int
+
+const (
+	StateTitle GameState = iota
+	StatePlaying
+	StatePaused
+	StateTransitioning
+)
+
 type Game struct {
 	World     *world.World
+	State     GameState
+	EasyMode  bool
 	RunnerID  core.Entity
 	SpectreID core.Entity
 	Levels       []level.Level
 	CurrentLevel int
-	IsPaused     bool
 	Popup        *level.MemoryNode
 	PopupTime    time.Time
 	PopupPhotoIndex int
-	IsTransitioning bool
 	TransitionTime  float64
 	TargetLevel     int
 	ReunionPoint    core.Vector2
@@ -76,6 +85,7 @@ func NewGame() *Game {
 	if err != nil { log.Fatal(err) }
 	g := &Game{
 		World:         world.NewWorld(),
+		State:         StateTitle,
 		Levels:        level.InitLevels(),
 		FrostMask:     image.NewRGBA(image.Rect(0, 0, core.MistWidth, core.MistHeight)),
 		NebulaShader:  s,
@@ -179,15 +189,34 @@ func generateAstroSprite() *ebiten.Image {
 
 func (g *Game) Update() error {
 	g.handleInput()
-	if g.IsTransitioning { return g.updateTransition() }
-	if g.IsPaused { return g.updatePaused() }
-	return g.updateActive()
+	switch g.State {
+	case StateTitle:
+		if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+			g.State = StatePlaying
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyE) {
+			g.EasyMode = !g.EasyMode
+		}
+		return nil
+	case StateTransitioning:
+		return g.updateTransition()
+	case StatePaused:
+		return g.updatePaused()
+	default:
+		return g.updateActive()
+	}
 }
 
 func (g *Game) handleInput() {
-	if inpututil.IsKeyJustPressed(ebiten.KeyP) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		g.IsPaused = !g.IsPaused
-		if !g.IsPaused { g.Popup = nil }
+	if g.State == StatePlaying || g.State == StatePaused {
+		if inpututil.IsKeyJustPressed(ebiten.KeyP) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			if g.State == StatePaused {
+				g.State = StatePlaying
+				g.Popup = nil
+			} else {
+				g.State = StatePaused
+			}
+		}
 	}
 }
 
@@ -196,7 +225,8 @@ func (g *Game) updatePaused() error {
 		if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) { g.PopupPhotoIndex = (g.PopupPhotoIndex + 1) % len(g.Popup.Photos) }
 		if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) { g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos) }
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-			g.IsPaused, g.Popup, g.IsTransitioning, g.TransitionTime, g.TargetLevel = false, nil, true, 0, g.CurrentLevel + 1
+			g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
+			g.TransitionTime = 0
 		}
 	}
 	return nil
@@ -205,7 +235,7 @@ func (g *Game) updatePaused() error {
 func (g *Game) updateTransition() error {
 	g.TransitionTime += 1.0 / 120.0
 	if g.TransitionTime >= 1.0 {
-		g.IsTransitioning = false
+		g.State = StatePlaying
 		g.LoadLevel(g.TargetLevel)
 		g.TransitionTime = 0
 	}
@@ -221,7 +251,7 @@ func (g *Game) updateActive() error {
 	systems.SystemInput(g.World)
 	systems.SystemAI(g.World, lvl)
 	systems.SystemSpectreVisuals(g.World, &g.SpectreState, g.SpectreID, g.SpectreSprites)
-	systems.SystemPhysics(g.World)
+	systems.SystemPhysics(g.World, g.EasyMode)
 	systems.SystemEntropy(g.World, g.FrostMask)
 	systems.SystemProjectileEmitter(g.World)
 	systems.SystemLifetime(g.World)
@@ -237,8 +267,8 @@ func (g *Game) checkWinCondition(lvl *level.Level) error {
 			if well == nil { continue }
 			wellTrans := g.World.Transforms[id]
 			if wellTrans == nil { continue }
-			if core.DistWrapped(pSpec.Position, wellTrans.Position) < well.Radius + 15 {
-				g.IsPaused, g.Popup, g.PopupTime, g.PopupPhotoIndex, g.ReunionPoint = true, &lvl.Memory, time.Now(), 0, pSpec.Position
+			if core.DistWrapped(pSpec.Position, wellTrans.Position) < well.Radius+15 {
+				g.State, g.Popup, g.PopupTime, g.PopupPhotoIndex, g.ReunionPoint = StatePaused, &lvl.Memory, time.Now(), 0, pSpec.Position
 				g.World.Audio.Play("chime")
 				return nil
 			}
@@ -254,7 +284,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		shake.Y = (rand.Float64() - 0.5) * g.World.ScreenShake * 2
 	}
 	g.drawWorld(screen, shake)
-	if g.IsTransitioning { g.drawTransition(screen) }
+	if g.State == StateTransitioning { g.drawTransition(screen) }
 	g.drawUI(screen)
 }
 
@@ -284,8 +314,34 @@ func (g *Game) drawMist(screen *ebiten.Image) {
 }
 
 func (g *Game) drawUI(screen *ebiten.Image) {
-	if !g.IsPaused { return }
-	if g.Popup != nil { g.drawPopup(screen) } else { g.drawPauseMenu(screen) }
+	switch g.State {
+	case StateTitle:
+		g.drawTitleScreen(screen)
+	case StatePaused:
+		if g.Popup != nil {
+			g.drawPopup(screen)
+		} else {
+			g.drawPauseMenu(screen)
+		}
+	}
+}
+
+func (g *Game) drawTitleScreen(screen *ebiten.Image) {
+	vector.DrawFilledRect(screen, 0, 0, float32(core.ScreenWidth), float32(core.ScreenHeight), color.RGBA{0, 0, 0, 180}, false)
+	bw, bh := 600.0, 300.0
+	bx, by := (float64(core.ScreenWidth)-bw)/2, (float64(core.ScreenHeight)-bh)/2
+	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 2, color.RGBA{180, 20, 40, 255}, false)
+
+	ebitenutil.DebugPrintAt(screen, "Dear Stella, I made this game for you.", int(bx)+100, int(by)+80)
+	ebitenutil.DebugPrintAt(screen, "Enjoy, our love.", int(bx)+220, int(by)+130)
+
+	ebitenutil.DebugPrintAt(screen, "[ SPACE TO START ]", int(bx)+220, int(by)+220)
+
+	modeText := "MODE: NORMAL (Press E to toggle)"
+	if g.EasyMode {
+		modeText = "MODE: EASY (Press E to toggle)"
+	}
+	ebitenutil.DebugPrintAt(screen, modeText, int(bx)+180, int(by)+250)
 }
 
 func (g *Game) drawPopup(screen *ebiten.Image) {

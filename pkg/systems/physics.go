@@ -11,17 +11,50 @@ import (
 	"beautifulmess/pkg/world"
 )
 
-func SystemPhysics(w *world.World) {
+func SystemPhysics(w *world.World, easyMode bool) {
 	// Cache-friendly sequential iteration over component slices minimizes CPU pipeline stalls
 	for id, phys := range w.Physics {
 		if phys == nil { continue }
 		trans := w.Transforms[id]
 		if trans == nil { continue }
 
+		if easyMode && w.Tags[id] != nil && w.Tags[id].Name == "bullet" {
+			applyHoming(core.Entity(id), w)
+		}
+
 		applyForces(core.Entity(id), w)
 		integrate(phys, trans)
 		core.WrapPosition(&trans.Position)
 		handleCollisions(core.Entity(id), w)
+	}
+}
+
+func applyHoming(id core.Entity, w *world.World) {
+	phys := w.Physics[id]
+	trans := w.Transforms[id]
+	if phys == nil || trans == nil { return }
+
+	// Find the spectre
+	var targetPos core.Vector2
+	found := false
+	for sid, tag := range w.Tags {
+		if tag != nil && tag.Name == "spectre" {
+			if st := w.Transforms[sid]; st != nil {
+				targetPos = st.Position
+				found = true
+				break
+			}
+		}
+	}
+
+	if found {
+		delta := core.VecToWrapped(trans.Position, targetPos)
+		dist := math.Sqrt(delta.X*delta.X + delta.Y*delta.Y)
+		if dist > 0 {
+			force := 0.8
+			phys.Velocity.X += (delta.X / dist) * force
+			phys.Velocity.Y += (delta.Y / dist) * force
+		}
 	}
 }
 
