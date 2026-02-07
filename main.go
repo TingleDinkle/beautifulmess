@@ -88,6 +88,7 @@ type Game struct {
 	TitleTimer  float64
 	StartAnimation float64
 	TypewriterChars int
+	MusicFade      float64
 }
 
 func NewGame() *Game {
@@ -105,12 +106,14 @@ func NewGame() *Game {
 		PopupRNG:      rand.New(rand.NewSource(0)),
 		PhotoCache:    make(map[string]*ebiten.Image),
 		StartTime:     time.Now(),
+		MusicFade:     1.0,
 		SpectreState:  systems.SpectreVisualState{State: "normal"},
 	}
 	g.SpectreSprites = systems.LoadSpectreSet("assets/normal.png", "assets/angy.png", "assets/kewt.png")
 	g.SpriteRunner = generateAstroSprite()
 	g.World.Audio.LoadFile("shoot", "assets/shoot.wav")
 	g.World.Audio.LoadFile("boom", "assets/boom.wav")
+	g.World.Audio.LoadFile("transition", "assets/music.mp3")
 	g.World.Audio.SetVolume(g.MasterVolume)
 	c := color.RGBA{10, 5, 20, 240}
 	for i := 0; i < len(g.FrostMask.Pix); i += 4 {
@@ -208,8 +211,37 @@ func generateAstroSprite() *ebiten.Image {
 	return img
 }
 
+func (g *Game) updateMusic() {
+	// Master volume base
+	targetVol := g.MasterVolume * g.MusicFade
+	g.World.Audio.SetPlayerVolume("transition", targetVol)
+
+	// Fading logic
+	if g.State == StateTransitioning {
+		// Fade out as transition completes
+		g.MusicFade = math.Max(0, 1.0-g.TransitionTime)
+	} else if g.State == StateEnding {
+		g.MusicFade = 1.0
+		// Manual loop check if music stops
+		if pool, ok := g.World.Audio.Pools["transition"]; ok {
+			if !pool[0].IsPlaying() {
+				pool[0].Rewind()
+				pool[0].Play()
+			}
+		}
+	} else if g.State == StateTitle && g.MusicFade < 1.0 {
+		// Fade out completely if we just returned to title from game/ending
+		g.MusicFade = math.Max(0, g.MusicFade-0.02)
+		if g.MusicFade == 0 {
+			g.World.Audio.Stop("transition")
+			g.MusicFade = 1.0 // Reset for next use
+		}
+	}
+}
+
 func (g *Game) Update() error {
 	g.handleInput()
+	g.updateMusic()
 
 	switch g.State {
 	case StateTitle:
@@ -335,8 +367,8 @@ func (g *Game) handleInput() {
 	
 	// ESC Logic
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		if g.Popup != nil || g.State == StatePaused {
-			// If we're in a popup or already paused, ESC takes us all the way back to Title
+		if g.Popup != nil || g.State == StatePaused || g.State == StateEnding {
+			// Start fading music if it's playing
 			g.State = StateTitle
 			g.TitleTimer = 0
 			g.TypewriterChars = 0
@@ -407,10 +439,14 @@ func (g *Game) updatePausedState() error {
 			}
 			if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 				if g.CurrentLevel >= len(g.Levels)-1 {
+					g.World.Audio.PlayAt("transition", 0) // Full song for ending
+					g.MusicFade = 1.0
 					g.State = StateEnding
 					g.TransitionTime = 0
 					g.Popup = nil
 				} else {
+					g.World.Audio.PlayAt("transition", 78*time.Second) // 1:18 for bloom
+					g.MusicFade = 1.0
 					g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
 					g.TransitionTime = 0
 				}
@@ -455,6 +491,7 @@ func (g *Game) getDescIndex() int {
 func (g *Game) updateTransitionState() error {
 	g.TransitionTime += 1.0 / 120.0
 	if g.TransitionTime >= 1.0 {
+		g.World.Audio.Stop("transition")
 		g.State = StatePlaying
 		g.LoadLevel(g.TargetLevel)
 		g.TransitionTime = 0

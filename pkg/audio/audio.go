@@ -5,8 +5,11 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 	"github.com/hajimehoshi/ebiten/v2/audio/wav"
 )
 
@@ -51,12 +54,21 @@ func (as *AudioSystem) addPool(name string, b []byte) {
 func (as *AudioSystem) LoadFile(name, path string) {
 	f, err := os.Open(path)
 	if err != nil { return }
-	defer f.Close()
 
-	d, err := wav.DecodeWithSampleRate(SampleRate, f)
-	if err != nil { return }
+	var d io.Reader
+	if strings.HasSuffix(strings.ToLower(path), ".mp3") {
+		d, err = mp3.DecodeWithSampleRate(SampleRate, f)
+	} else {
+		d, err = wav.DecodeWithSampleRate(SampleRate, f)
+	}
+
+	if err != nil {
+		f.Close()
+		return
+	}
 
 	b, err := io.ReadAll(d)
+	f.Close()
 	if err != nil { return }
 
 	as.addPool(name, b)
@@ -78,8 +90,33 @@ func (as *AudioSystem) Play(name string) {
 	}
 }
 
+func (as *AudioSystem) PlayAt(name string, offset time.Duration) {
+	if pool, ok := as.Pools[name]; ok {
+		p := pool[0]
+		p.Seek(offset)
+		p.Play()
+	}
+}
+
+func (as *AudioSystem) Stop(name string) {
+	if pool, ok := as.Pools[name]; ok {
+		for _, p := range pool {
+			p.Pause()
+			p.Rewind()
+		}
+	}
+}
+
 func (as *AudioSystem) SetVolume(v float64) {
 	for _, pool := range as.Pools {
+		for _, p := range pool {
+			p.SetVolume(v)
+		}
+	}
+}
+
+func (as *AudioSystem) SetPlayerVolume(name string, v float64) {
+	if pool, ok := as.Pools[name]; ok {
 		for _, p := range pool {
 			p.SetVolume(v)
 		}
