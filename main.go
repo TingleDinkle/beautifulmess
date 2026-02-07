@@ -53,6 +53,7 @@ const (
 	StatePlaying
 	StatePaused
 	StateTransitioning
+	StateEnding
 )
 
 type Game struct {
@@ -140,10 +141,17 @@ func (g *Game) spawnLevelEntities(lvl level.Level) {
 	}
 	for _, wall := range lvl.Walls { spawnWall(w, wall.X, wall.Y, wall.Destructible) }
 	
+	// Friction and Mass scaling for "twists"
+	fric := lvl.Friction
+	if fric == 0 { fric = 0.94 }
+	mass := 1.0
+	// Level 4 "Explosive Chaos" twist: Higher mass to plow through walls
+	if g.CurrentLevel == 3 { mass = 5.0 }
+
 	g.SpectreID = w.CreateEntity()
 	w.Tags[g.SpectreID] = &components.Tag{Name: "spectre"}
 	w.Transforms[g.SpectreID] = &components.Transform{Position: lvl.StartP2}
-	w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: 0.96, Mass: 1.0, GravityMultiplier: 3.5}
+	w.Physics[g.SpectreID] = &components.Physics{MaxSpeed: 6.0, Friction: fric, Mass: mass, GravityMultiplier: 3.5}
 	
 	// Dynamic scaling to maintain photo integrity while fitting the world
 	specW, _ := g.SpectreSprites["normal"].Size()
@@ -156,7 +164,7 @@ func (g *Game) spawnLevelEntities(lvl level.Level) {
 	g.RunnerID = w.CreateEntity()
 	w.Tags[g.RunnerID] = &components.Tag{Name: "runner"}
 	w.Transforms[g.RunnerID] = &components.Transform{Position: lvl.StartP1}
-	w.Physics[g.RunnerID] = &components.Physics{MaxSpeed: 7.5, Friction: 0.92, Mass: 1.0}
+	w.Physics[g.RunnerID] = &components.Physics{MaxSpeed: 7.5, Friction: fric - 0.02, Mass: mass}
 	w.Renders[g.RunnerID] = &components.Render{Sprite: g.SpriteRunner, Color: color.RGBA{0, 255, 255, 255}, Glow: true, Scale: 1.0}
 	w.AIs[g.RunnerID] = &components.AI{ScriptName: "runner.lua"}
 	w.InputControlleds[g.RunnerID] = &components.InputControlled{}
@@ -212,6 +220,8 @@ func (g *Game) Update() error {
 		return g.updatePausedState()
 	case StateTransitioning:
 		return g.updateTransitionState()
+	case StateEnding:
+		return g.updateEndingState()
 	}
 	return nil
 }
@@ -396,8 +406,14 @@ func (g *Game) updatePausedState() error {
 				g.World.Audio.Play("blip")
 			}
 			if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
-				g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
-				g.TransitionTime = 0
+				if g.CurrentLevel >= len(g.Levels)-1 {
+					g.State = StateEnding
+					g.TransitionTime = 0
+					g.Popup = nil
+				} else {
+					g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
+					g.TransitionTime = 0
+				}
 			}
 		}
 	} else {
@@ -406,6 +422,16 @@ func (g *Game) updatePausedState() error {
 			g.TitleTimer = 0
 			g.TypewriterChars = 0
 		}
+	}
+	return nil
+}
+
+func (g *Game) updateEndingState() error {
+	g.TransitionTime += 1.0 / 60.0
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) || (g.TransitionTime > 10 && inpututil.IsKeyJustPressed(ebiten.KeySpace)) {
+		g.State = StateTitle
+		g.TitleTimer = 0
+		g.TypewriterChars = 0
 	}
 	return nil
 }
@@ -498,6 +524,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	switch g.State {
 	case StateTitle:
 		g.drawTitleScreen(screen)
+	case StateEnding:
+		g.drawEndingScreen(screen)
 	default:
 		shake := core.Vector2{}
 		if g.World.ScreenShake > 0 {
@@ -778,6 +806,74 @@ func (g *Game) drawBloom(screen *ebiten.Image, center core.Vector2, radius float
 		angle := (float64(i) / float64(numPetals)) * 2 * math.Pi
 		px, py := center.X + math.Cos(angle)*radius, center.Y + math.Sin(angle)*radius
 		vector.DrawFilledCircle(screen, float32(px), float32(py), float32(radius*0.2), clr, true)
+	}
+}
+
+func (g *Game) drawEndingScreen(screen *ebiten.Image) {
+	screen.Fill(color.Black)
+	t := g.TransitionTime
+	
+	// Heart pulsing effect
+	heartScale := 1.0 + 0.1*math.Sin(t*3.0)
+	centerX, centerY := core.ScreenWidth/2, core.ScreenHeight/2
+	
+	// Draw a big stylized heart in the background
+	for i := 0; i < 50; i++ {
+		angle := float64(i) / 50.0 * 2.0 * math.Pi
+		// Heart parametric equation
+		hx := 16.0 * math.Pow(math.Sin(angle), 3)
+		hy := -(13.0*math.Cos(angle) - 5.0*math.Cos(2.0*angle) - 2.0*math.Cos(3.0*angle) - math.Cos(4.0*angle))
+		
+		px := float64(centerX) + hx*15.0*heartScale
+		py := float64(centerY) + hy*15.0*heartScale
+		
+		alpha := uint8(100 + 50*math.Sin(t*2.0+float64(i)*0.1))
+		vector.DrawFilledCircle(screen, float32(px), float32(py), 10, color.RGBA{255, 20, 147, alpha}, true)
+	}
+
+	// Shimmering stylized text
+	s1 := "I LOVE YOU"
+	s2 := "HAPPY VALENTINE"
+	
+	// Draw main text
+	g.drawShimmerText(screen, s1, centerX, centerY-40, 3.0, t)
+	g.drawShimmerText(screen, s2, centerX, centerY+40, 2.0, t+1.0)
+	
+	if t > 5 {
+		ebitenutil.DebugPrintAt(screen, "[ PRESS ESC TO RETURN ]", centerX-80, core.ScreenHeight-50)
+	}
+}
+
+func (g *Game) drawShimmerText(screen *ebiten.Image, s string, cx, cy int, size float64, t float64) {
+	// Simple large text implementation using multiple small DebugPrints for "stylization"
+	// since we don't have a high-res font loader easily available.
+	// We'll simulate 'big' text by offsetting chars.
+	
+	w := len(s) * 12
+	startX := cx - w/2
+	
+	for i, char := range s {
+		charStr := string(char)
+		offsetX := float64(i * 12)
+		offsetY := 5.0 * math.Sin(t*4.0 + float64(i)*0.5)
+		
+		// Shadow
+		ebitenutil.DebugPrintAt(screen, charStr, int(float64(startX)+offsetX)+2, int(float64(cy)+offsetY)+2)
+		// Main char with shimmer color
+		r := uint8(200 + 55*math.Sin(t*3.0 + float64(i)*0.3))
+		g := uint8(100 + 100*math.Cos(t*2.0 + float64(i)*0.5))
+		b := uint8(150 + 105*math.Sin(t*5.0))
+		
+		// Fake "thickness"
+		for dx := -1; dx <= 1; dx++ {
+			for dy := -1; dy <= 1; dy++ {
+				ebitenutil.DebugPrintAt(screen, charStr, int(float64(startX)+offsetX)+dx, int(float64(cy)+offsetY)+dy)
+			}
+		}
+		
+		// Glow/Highlight
+		vector.DrawFilledCircle(screen, float32(float64(startX)+offsetX+4), float32(float64(cy)+offsetY+8), 6, color.RGBA{r, g, b, 100}, true)
+		ebitenutil.DebugPrintAt(screen, charStr, int(float64(startX)+offsetX), int(float64(cy)+offsetY))
 	}
 }
 

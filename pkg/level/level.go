@@ -27,26 +27,17 @@ type WallDef struct {
 }
 
 type Level struct {
-	Name    string
-	Wells   []GravityWell
-	Walls   []WallDef
-	Memory  MemoryNode
-	StartP1 core.Vector2
-	StartP2 core.Vector2
+	Name     string
+	Wells    []GravityWell
+	Walls    []WallDef
+	Memory   MemoryNode
+	StartP1  core.Vector2
+	StartP2  core.Vector2
+	Friction float64 // Friction override for specialized gameplay feel
 }
 
 func InitLevels() []Level {
 	// Procedural generation helpers reduce boilerplate and ensure grid-alignment
-	genGrid := func(startX, startY, w, h, step int, dest bool) []WallDef {
-		var walls []WallDef
-		for i := 0; i < w; i++ {
-			for j := 0; j < h; j++ {
-				walls = append(walls, WallDef{X: float64(startX + i*step), Y: float64(startY + j*step), Destructible: dest})
-			}
-		}
-		return walls
-	}
-
 	genLine := func(x1, y1, x2, y2 int, dest bool) []WallDef {
 		var walls []WallDef
 		steps := int(math.Max(math.Abs(float64(x2-x1)), math.Abs(float64(y2-y1))) / 10)
@@ -58,9 +49,9 @@ func InitLevels() []Level {
 	}
 
 	return []Level{
-		// 1. Terminal Velocity: Focuses on orbital mechanics and momentum conservation
+		// 1. Where It All Began: The Spark (Normal Mechanics)
 		{
-			Name: "Terminal Velocity",
+			Name: "The Spark",
 			Wells: []GravityWell{{Position: core.Vector2{X: 640, Y: 360}, Radius: 150, Mass: 5.0}},
 			Memory: MemoryNode{
 				Position: core.Vector2{X: 640, Y: 360},
@@ -73,144 +64,201 @@ func InitLevels() []Level {
 				Color:  color.RGBA{255, 100, 150, 255},
 				Photos: []string{"assets/FIRSTMEET.jpg", "assets/LoveBug1.jpg", "assets/LoveBug2.jpg", "assets/firstintro1.jpg"},
 			},
-			StartP1: core.Vector2{X: 100, Y: 360},
-			StartP2: core.Vector2{X: 1100, Y: 360},
+			StartP1:  core.Vector2{X: 100, Y: 360},
+			StartP2:  core.Vector2{X: 1100, Y: 360},
+			Friction: 0.94,
 		},
-		// 2. Data Fragmentation: Introduces terraforming through destruction
+		// 2. The Color of Your Soul: Kaleidoscope Twist (Many tiny wells)
 		{
-			Name: "Data Fragmentation",
-			Wells: []GravityWell{{Position: core.Vector2{X: 640, Y: 360}, Radius: 60, Mass: 2.0}},
-			Walls: func() []WallDef {
-				w := genGrid(200, 100, 88, 52, 10, true)
-				var filtered []WallDef
-				for _, wall := range w {
-					if core.DistWrapped(core.Vector2{X: wall.X, Y: wall.Y}, core.Vector2{X: 640, Y: 360}) > 120 {
-						filtered = append(filtered, wall)
-					}
-				}
-				return filtered
-			}(),
-			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Fragmentation",
-				Descriptions: []string{"Pieces of us scattered.\nI had to break everything to find you."},
-				Color:        color.RGBA{255, 150, 50, 255},
-				Photos:       []string{"p2_1"},
-			},
-			StartP1: core.Vector2{X: 50, Y: 360},
-			StartP2: core.Vector2{X: 1230, Y: 360},
-		},
-		// 3. Packet Loss: Linear precision challenge
-		{
-			Name: "Packet Loss",
-			Wells: []GravityWell{
-				{Position: core.Vector2{X: 300, Y: 90}, Radius: 40, Mass: 1.5},
-				{Position: core.Vector2{X: 900, Y: 630}, Radius: 40, Mass: 1.5},
-			},
-			Walls: append(genLine(0, 240, 1280, 240, false), genLine(0, 480, 1280, 480, false)...),
-			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Parallel Lines",
-				Descriptions: []string{"We were running parallel.\nNever crossing."},
-				Color:        color.RGBA{50, 200, 50, 255},
-				Photos:       []string{"p3_1"},
-			},
-			StartP1: core.Vector2{X: 50, Y: 120},
-			StartP2: core.Vector2{X: 1230, Y: 600},
-		},
-		// 4. Static Field: Unpredictable vector field navigation
-		{
-			Name: "Static Field",
+			Name: "Color of Your Soul",
 			Wells: func() []GravityWell {
 				var wells []GravityWell
-				for i := 0; i < 12; i++ {
+				for i := 0; i < 15; i++ {
 					wells = append(wells, GravityWell{
-						Position: core.Vector2{X: float64(100 + rand.Intn(1080)), Y: float64(100 + rand.Intn(520))},
-						Radius:   30, Mass: 1.0,
+						Position: core.Vector2{X: 200 + rand.Float64()*880, Y: 100 + rand.Float64()*520},
+						Radius:   25, Mass: 0.8,
 					})
 				}
 				return wells
 			}(),
+			Walls: append(genLine(300, 100, 980, 100, false), genLine(300, 620, 980, 620, false)...),
 			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Noise",
-				Descriptions: []string{"Too much noise.\nI couldn't hear you calling."},
-				Color:        color.RGBA{200, 200, 200, 255},
-				Photos:       []string{"p4_1"},
+				Position: core.Vector2{X: 640, Y: 360},
+				Title:    "Discovery",
+				Descriptions: []string{
+					"After that initial spark, I started discovering the world through your eyes. You aren't just 'a girl I met'; you're an artist of life. From your aesthetic to the way even a simple tea or a fresh day feels different with you. It’s when I realized your beauty wasn't just physical, but a whole vibe that started coloring my grey world.",
+				},
+				Color:  color.RGBA{150, 255, 150, 255},
+				Photos: []string{"assets/floweigirl.jpg", "assets/floweigirlteainspo.jpg", "assets/mint.jpg"},
 			},
-			StartP1: core.Vector2{X: 640, Y: 50},
-			StartP2: core.Vector2{X: 640, Y: 670},
+			StartP1:  core.Vector2{X: 100, Y: 100},
+			StartP2:  core.Vector2{X: 1180, Y: 620},
+			Friction: 0.92,
 		},
-		// 5. Firewall Breach: Puzzle-based environmental manipulation
+		// 3. The Muffin Chapter: Catnip Twist (Wells in the face)
 		{
-			Name: "Firewall Breach",
-			Wells: []GravityWell{{Position: core.Vector2{X: 300, Y: 360}, Radius: 100, Mass: 3.0}},
-			Walls: append(append(genLine(540, 260, 740, 260, true), genLine(540, 460, 740, 460, true)...),
-				append(genLine(540, 260, 540, 460, true), genLine(740, 260, 740, 460, true)...)...),
-			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Firewall",
-				Descriptions: []string{"You built walls to keep me out.\nI tore them down to keep you in."},
-				Color:        color.RGBA{255, 50, 50, 255},
-				Photos:       []string{"p5_1"},
-			},
-			StartP1: core.Vector2{X: 100, Y: 360},
-			StartP2: core.Vector2{X: 640, Y: 360},
-		},
-		// 6. Eclipse: Physics exploitation using Lagrange points
-		{
-			Name: "Eclipse",
+			Name: "The Muffin Chapter",
 			Wells: []GravityWell{
-				{Position: core.Vector2{X: 440, Y: 360}, Radius: 80, Mass: 2.5},
-				{Position: core.Vector2{X: 840, Y: 360}, Radius: 80, Mass: 2.5},
+				{Position: core.Vector2{X: 520, Y: 350}, Radius: 40, Mass: 1.5}, // Left Eye Well
+				{Position: core.Vector2{X: 760, Y: 350}, Radius: 40, Mass: 1.5}, // Right Eye Well
+				{Position: core.Vector2{X: 640, Y: 420}, Radius: 30, Mass: 1.0}, // Nose Well
 			},
-			Walls: append(genLine(640, 260, 640, 460, false), genLine(600, 360, 680, 360, false)...),
+			Walls: func() []WallDef {
+				var walls []WallDef
+				// Left Ear
+				walls = append(walls, genLine(450, 250, 500, 150, false)...)
+				walls = append(walls, genLine(500, 150, 550, 250, false)...)
+				// Right Ear
+				walls = append(walls, genLine(730, 250, 780, 150, false)...)
+				walls = append(walls, genLine(780, 150, 830, 250, false)...)
+				// Head Outline (Top)
+				walls = append(walls, genLine(550, 250, 730, 250, false)...)
+				// Cheeks
+				walls = append(walls, genLine(450, 250, 400, 400, false)...)
+				walls = append(walls, genLine(830, 250, 880, 400, false)...)
+				// Chin
+				walls = append(walls, genLine(400, 400, 640, 600, false)...)
+				walls = append(walls, genLine(880, 400, 640, 600, false)...)
+				// Whiskers
+				walls = append(walls, genLine(350, 380, 250, 350, true)...)
+				walls = append(walls, genLine(350, 400, 250, 400, true)...)
+				walls = append(walls, genLine(930, 380, 1030, 350, true)...)
+				walls = append(walls, genLine(930, 400, 1030, 400, true)...)
+				return walls
+			}(),
 			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Eclipse",
-				Descriptions: []string{"Caught between two stars.\nBurnt by both."},
-				Color:        color.RGBA{255, 255, 100, 255},
-				Photos:       []string{"p6_1"},
+				Position: core.Vector2{X: 640, Y: 420},
+				Title:    "Our Little Family",
+				Descriptions: []string{
+					"Our first step into 'forever' wasn't a contract; it was a cat. Adopting our little muffin, Tonton. Seeing you nurture this tiny creature made me realize how big your heart is. We weren't just two people anymore; we were a little family. You became a mom to this fluffball, and I realized I wanted to protect this home we were building together.",
+				},
+				Color:  color.RGBA{255, 200, 100, 255},
+				Photos: []string{"assets/tonton1.jpg", "assets/tonton2.jpg", "assets/tonton3.jpg", "assets/tonton4.jpg", "assets/tonton5.jpg"},
 			},
-			StartP1: core.Vector2{X: 640, Y: 100},
-			StartP2: core.Vector2{X: 640, Y: 620},
+			StartP1:  core.Vector2{X: 640, Y: 100},
+			StartP2:  core.Vector2{X: 640, Y: 650},
+			Friction: 0.95,
 		},
-		// 7. System Failure: Inverts safety zones by weaponizing the wrap mechanic
+		// 4. The Beautiful Mess: Explosive Chaos (Checkerboard grid)
 		{
-			Name: "System Failure",
+			Name:  "The Beautiful Mess",
+			Wells: []GravityWell{{Position: core.Vector2{X: 640, Y: 360}, Radius: 100, Mass: 3.0}},
+			Walls: func() []WallDef {
+				var walls []WallDef
+				// Checkerboard pattern reduces entity count by 50% while looking "messy"
+				for x := 0; x < 42; x++ {
+					for y := 0; y < 24; y++ {
+						if (x+y)%2 == 0 {
+							walls = append(walls, WallDef{X: float64(x*30 + 15), Y: float64(y*30 + 15), Destructible: true})
+						}
+					}
+				}
+				return walls
+			}(),
+			Memory: MemoryNode{
+				Position: core.Vector2{X: 640, Y: 360},
+				Title:    "Pure Comfort",
+				Descriptions: []string{
+					"This is the 'Mess' part of us. The unfiltered, goofy, and sometimes 'gross' comfort of a real relationship. From the inside jokes to those massive food comas. It’s the beauty of being able to be our absolute weirdest selves without a single drop of judgment. I love our mess.",
+				},
+				Color:  color.RGBA{255, 100, 100, 255},
+				Photos: []string{"assets/forkU.jpg", "assets/burrito.jpg", "assets/ToeSuckah.jpg", "assets/passedawazoo.jpg"},
+			},
+			StartP1:  core.Vector2{X: 100, Y: 100},
+			StartP2:  core.Vector2{X: 1180, Y: 620},
+			Friction: 0.90, // Heavy feel
+		},
+		// 5. Grounded in the Storm: Hurricane Twist (Corner wells pushing in)
+		{
+			Name: "Grounded in the Storm",
 			Wells: []GravityWell{
-				{Position: core.Vector2{X: 0, Y: 0}, Radius: 100, Mass: 3.0},
-				{Position: core.Vector2{X: 1280, Y: 0}, Radius: 100, Mass: 3.0},
-				{Position: core.Vector2{X: 0, Y: 720}, Radius: 100, Mass: 3.0},
-				{Position: core.Vector2{X: 1280, Y: 720}, Radius: 100, Mass: 3.0},
+				{Position: core.Vector2{X: 0, Y: 0}, Radius: 200, Mass: 4.0},
+				{Position: core.Vector2{X: 1280, Y: 0}, Radius: 200, Mass: 4.0},
+				{Position: core.Vector2{X: 0, Y: 720}, Radius: 200, Mass: 4.0},
+				{Position: core.Vector2{X: 1280, Y: 720}, Radius: 200, Mass: 4.0},
 			},
-			Walls: append(genLine(300, 0, 300, 720, false), genLine(980, 0, 980, 720, false)...),
+			Walls: append(genLine(640, 0, 640, 300, false), genLine(640, 420, 640, 720, false)...),
 			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Edge Case",
-				Descriptions: []string{"There was no way out.\nThe edges were fraying."},
-				Color:        color.RGBA{200, 50, 200, 255},
-				Photos:       []string{"p7_1"},
+				Position: core.Vector2{X: 640, Y: 360},
+				Title:    "Our Sanctuary",
+				Descriptions: []string{
+					"The world can be destructive, but we found warmth in the cold. Whether it was literally hugging a tree or creating a magical reality to escape into, we became each other's sanctuary. You are my safe place when things get hard.",
+				},
+				Color:  color.RGBA{100, 100, 255, 255},
+				Photos: []string{"assets/hugtree.jpg", "assets/warmth.jpg", "assets/unicorn.jpg"},
 			},
-			StartP1: core.Vector2{X: 640, Y: 300},
-			StartP2: core.Vector2{X: 640, Y: 420},
+			StartP1:  core.Vector2{X: 100, Y: 360},
+			StartP2:  core.Vector2{X: 1180, Y: 360},
+			Friction: 0.94,
 		},
-		// 8. The Void: Final confrontation in a decaying grid
+		// 6. The Constant Duo: Orbits Twist (Low friction spinning)
 		{
-			Name: "The Void",
-			Wells: []GravityWell{{Position: core.Vector2{X: 640, Y: 360}, Radius: 50, Mass: 1.0}},
-			Walls: genGrid(100, 100, 10, 5, 100, true),
-			Memory: MemoryNode{
-				Position:     core.Vector2{X: 640, Y: 360},
-				Title:        "Zero State",
-				Descriptions: []string{"Silence at last.\nWe drift together."},
-				Color:        color.RGBA{255, 255, 255, 255},
-				Photos:       []string{"p8_1"},
+			Name: "The Constant Duo",
+			Wells: []GravityWell{
+				{Position: core.Vector2{X: 640, Y: 360}, Radius: 100, Mass: 5.0}, // Center anchor
 			},
-			StartP1: core.Vector2{X: 200, Y: 360},
-			StartP2: core.Vector2{X: 1080, Y: 360},
+			Memory: MemoryNode{
+				Position: core.Vector2{X: 640, Y: 360},
+				Title:    "The One Constant",
+				Descriptions: []string{
+					"Different dates, different outfits, different years—but the same 'Duo.' We’ve changed, grown, and prospered, but every day reinforces that we are the one constant in each other's lives. No matter where we go, we go together.",
+				},
+				Color:  color.RGBA{200, 200, 255, 255},
+				Photos: []string{"assets/duo.jpg", "assets/duo2.jpg", "assets/duo3.jpg", "assets/duo4.jpg"},
+			},
+			StartP1:  core.Vector2{X: 640, Y: 100},
+			StartP2:  core.Vector2{X: 640, Y: 620},
+			Friction: 0.99, // Orbital feel
+		},
+		// 7. The Magnum Opus: Event Horizon Twist (Indestructible wall gap)
+		{
+			Name:  "The Magnum Opus",
+			Wells: []GravityWell{{Position: core.Vector2{X: 640, Y: 360}, Radius: 300, Mass: 8.0}},
+			Walls: func() []WallDef {
+				var walls []WallDef
+				// Indestructible diamond shield
+				walls = append(walls, genLine(640, 200, 800, 360, false)...)
+				walls = append(walls, genLine(800, 360, 640, 520, false)...)
+				walls = append(walls, genLine(640, 520, 480, 360, false)...)
+				// The only gap is at the top left
+				walls = append(walls, genLine(480, 360, 600, 240, false)...)
+				return walls
+			}(),
+			Memory: MemoryNode{
+				Position: core.Vector2{X: 640, Y: 360},
+				Title:    "My Goddess",
+				Descriptions: []string{
+					"I see you as my 'Magnum Opus'—the greatest thing I've ever had the privilege to be part of. Whether you're just 'sitting kewt' or being your radiant self, you are my goddess. This is the peak of everything we've built.",
+				},
+				Color:  color.RGBA{255, 255, 100, 255},
+				Photos: []string{"assets/magnumOpus.jpg", "assets/kewtcrunch.jpg", "assets/sitkewt.jpg"},
+			},
+			StartP1:  core.Vector2{X: 100, Y: 100},
+			StartP2:  core.Vector2{X: 1180, Y: 100},
+			Friction: 0.94,
+		},
+		// 8. Interlinked: Zero State Twist (Inevitable pull)
+		{
+			Name: "Interlinked",
+			Wells: []GravityWell{
+				{Position: core.Vector2{X: 640, Y: 360}, Radius: 50, Mass: 15.0}, // Absolute pull
+			},
+			Memory: MemoryNode{
+				Position: core.Vector2{X: 640, Y: 360},
+				Title:    "Zero State",
+				Descriptions: []string{
+					"No more noise. No more storms. Just 'Interlinked.' Like two souls that have finally found their frequency. We drift together in total peace. We were exactly what was missing in each other's life. Silence, at last, because words can't describe this anymore. We just are.",
+				},
+				Color:  color.RGBA{255, 255, 255, 255},
+				Photos: []string{"assets/interlinked.jpg"},
+			},
+			StartP1:  core.Vector2{X: 200, Y: 360},
+			StartP2:  core.Vector2{X: 1080, Y: 360},
+			Friction: 0.96,
 		},
 	}
 }
+
+
 
 
