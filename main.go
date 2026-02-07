@@ -813,68 +813,101 @@ func (g *Game) drawEndingScreen(screen *ebiten.Image) {
 	screen.Fill(color.Black)
 	t := g.TransitionTime
 	
-	// Heart pulsing effect
-	heartScale := 1.0 + 0.1*math.Sin(t*3.0)
+	// Color-changing heart logic (cycling through hues)
+	hue := math.Mod(t*0.5, 1.0)
+	heartColor := hueToRGB(hue)
+	
+	heartScale := 1.0 + 0.08*math.Sin(t*2.5) // Gentler pulse
 	centerX, centerY := core.ScreenWidth/2, core.ScreenHeight/2
 	
-	// Draw a big stylized heart in the background
-	for i := 0; i < 50; i++ {
-		angle := float64(i) / 50.0 * 2.0 * math.Pi
-		// Heart parametric equation
+	// Draw the stylized color-changing heart
+	for i := 0; i < 60; i++ {
+		angle := float64(i) / 60.0 * 2.0 * math.Pi
 		hx := 16.0 * math.Pow(math.Sin(angle), 3)
 		hy := -(13.0*math.Cos(angle) - 5.0*math.Cos(2.0*angle) - 2.0*math.Cos(3.0*angle) - math.Cos(4.0*angle))
 		
-		px := float64(centerX) + hx*15.0*heartScale
-		py := float64(centerY) + hy*15.0*heartScale
+		px := float64(centerX) + hx*18.0*heartScale
+		py := float64(centerY) + hy*18.0*heartScale
 		
-		alpha := uint8(100 + 50*math.Sin(t*2.0+float64(i)*0.1))
-		vector.DrawFilledCircle(screen, float32(px), float32(py), 10, color.RGBA{255, 20, 147, alpha}, true)
+		// Subtle individual particle flicker
+		alpha := uint8(180 + 75*math.Sin(t*3.0+float64(i)))
+		vector.DrawFilledCircle(screen, float32(px), float32(py), 12, color.RGBA{heartColor.R, heartColor.G, heartColor.B, alpha}, true)
 	}
 
-	// Shimmering stylized text
+	// Isaac-style Floating Red Text
 	s1 := "I LOVE YOU"
 	s2 := "HAPPY VALENTINE"
 	
-	// Draw main text
-	g.drawShimmerText(screen, s1, centerX, centerY-40, 3.0, t)
-	g.drawShimmerText(screen, s2, centerX, centerY+40, 2.0, t+1.0)
+	g.drawIsaacText(screen, s1, centerX, centerY-60, t)
+	g.drawIsaacText(screen, s2, centerX, centerY+60, t+0.5)
 	
 	if t > 5 {
 		ebitenutil.DebugPrintAt(screen, "[ PRESS ESC TO RETURN ]", centerX-80, core.ScreenHeight-50)
 	}
 }
 
-func (g *Game) drawShimmerText(screen *ebiten.Image, s string, cx, cy int, size float64, t float64) {
-	// Simple large text implementation using multiple small DebugPrints for "stylization"
-	// since we don't have a high-res font loader easily available.
-	// We'll simulate 'big' text by offsetting chars.
+func hueToRGB(h float64) color.RGBA {
+	r := math.Abs(h*6-3) - 1
+	g := 2 - math.Abs(h*6-2)
+	b := 2 - math.Abs(h*6-4)
+	clamp := func(v float64) uint8 {
+		if v < 0 { return 0 }
+		if v > 1 { return 255 }
+		return uint8(v * 255)
+	}
+	return color.RGBA{clamp(r), clamp(g), clamp(b), 255}
+}
+
+func (g *Game) drawIsaacText(screen *ebiten.Image, s string, cx, cy int, t float64) {
+	// Floating movement
+	floatY := 10.0 * math.Sin(t*1.5)
 	
-	w := len(s) * 12
+	charW := 14
+	w := len(s) * charW
 	startX := cx - w/2
+	
+	// Create a small buffer for colored text rendering
+	charBuf := ebiten.NewImage(16, 16)
 	
 	for i, char := range s {
 		charStr := string(char)
-		offsetX := float64(i * 12)
-		offsetY := 5.0 * math.Sin(t*4.0 + float64(i)*0.5)
-		
-		// Shadow
-		ebitenutil.DebugPrintAt(screen, charStr, int(float64(startX)+offsetX)+2, int(float64(cy)+offsetY)+2)
-		// Main char with shimmer color
-		r := uint8(200 + 55*math.Sin(t*3.0 + float64(i)*0.3))
-		g := uint8(100 + 100*math.Cos(t*2.0 + float64(i)*0.5))
-		b := uint8(150 + 105*math.Sin(t*5.0))
-		
-		// Fake "thickness"
+		wiggleY := 3.0 * math.Sin(t*3.0 + float64(i)*0.8)
+		posX := float64(startX) + float64(i*charW)
+		posY := float64(cy) + floatY + wiggleY
+
+		// 1. Thick "Black" Outline
+		op := &ebiten.DrawImageOptions{}
+		op.ColorScale.Scale(0.1, 0, 0, 1) // Very dark red/black
+		for dx := -2; dx <= 2; dx++ {
+			for dy := -2; dy <= 2; dy++ {
+				if dx*dx + dy*dy <= 4 {
+					g.drawCharColored(screen, charStr, posX+float64(dx), posY+float64(dy), op, charBuf)
+				}
+			}
+		}
+
+		// 2. Bold Red Fill
+		opRed := &ebiten.DrawImageOptions{}
+		opRed.ColorScale.Scale(1, 0.1, 0.1, 1) // Distinct Isaac Red
 		for dx := -1; dx <= 1; dx++ {
 			for dy := -1; dy <= 1; dy++ {
-				ebitenutil.DebugPrintAt(screen, charStr, int(float64(startX)+offsetX)+dx, int(float64(cy)+offsetY)+dy)
+				g.drawCharColored(screen, charStr, posX+float64(dx), posY+float64(dy), opRed, charBuf)
 			}
 		}
 		
-		// Glow/Highlight
-		vector.DrawFilledCircle(screen, float32(float64(startX)+offsetX+4), float32(float64(cy)+offsetY+8), 6, color.RGBA{r, g, b, 100}, true)
-		ebitenutil.DebugPrintAt(screen, charStr, int(float64(startX)+offsetX), int(float64(cy)+offsetY))
+		// 3. Highlight layer (slightly brighter)
+		opWhite := &ebiten.DrawImageOptions{}
+		opWhite.ColorScale.Scale(1, 0.5, 0.5, 1)
+		g.drawCharColored(screen, charStr, posX, posY, opWhite, charBuf)
 	}
+}
+
+func (g *Game) drawCharColored(screen *ebiten.Image, char string, x, y float64, op *ebiten.DrawImageOptions, buf *ebiten.Image) {
+	buf.Clear()
+	ebitenutil.DebugPrint(buf, char)
+	op.GeoM.Reset()
+	op.GeoM.Translate(x, y)
+	screen.DrawImage(buf, op)
 }
 
 func (g *Game) Layout(w, h int) (int, int) { return core.ScreenWidth, core.ScreenHeight }
