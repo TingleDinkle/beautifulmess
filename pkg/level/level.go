@@ -182,7 +182,7 @@ func InitLevels() []Level {
 				Position: core.Vector2{X: 640, Y: 360},
 				Title:    "Our Sanctuary",
 				Descriptions: []string{
-					"The world can be destructive, but we found warmth in the cold. Whether it was literally hugging a tree or creating a magical reality to escape into, we became each other's sanctuary. You are my safe place when things get hard.",
+					"You always call me your big teddy bear, and that’s why I call you my tree. I find so much warmth and comfort in hugging you, just like a bear hugging a tree. The world can be destructive, but we found our sanctuary in each other. Whether it was literally hugging a tree or creating our own magical reality to escape into, you became my safe place when things got hard.",
 				},
 				Color:  color.RGBA{100, 100, 255, 255},
 				Photos: []string{"assets/hugtree.jpg", "assets/warmth.jpg", "assets/unicorn.jpg"},
