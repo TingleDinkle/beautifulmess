@@ -9,6 +9,8 @@ import (
 	"math"
 	"math/rand"
 	"time"
+	"fmt"
+	"strings"
 
 	"beautifulmess/pkg/components"
 	"beautifulmess/pkg/core"
@@ -66,6 +68,8 @@ type Game struct {
 	Popup        *level.MemoryNode
 	PopupTime    time.Time
 	PopupPhotoIndex int
+	PopupAutoMode   bool
+	PopupWaitTimer  float64
 	TransitionTime  float64
 	TargetLevel     int
 	ReunionPoint    core.Vector2
@@ -74,6 +78,7 @@ type Game struct {
 	NebulaShader  *ebiten.Shader
 	ShaderOptions ebiten.DrawRectShaderOptions 
 	PopupRNG      *rand.Rand
+	PhotoCache    map[string]*ebiten.Image
 	SpectreSprites map[string]*ebiten.Image
 	SpectreState   systems.SpectreVisualState
 	SpriteRunner  *ebiten.Image
@@ -97,6 +102,7 @@ func NewGame() *Game {
 		NebulaShader:  s,
 		ShaderOptions: ebiten.DrawRectShaderOptions{Uniforms: make(map[string]interface{})},
 		PopupRNG:      rand.New(rand.NewSource(0)),
+		PhotoCache:    make(map[string]*ebiten.Image),
 		StartTime:     time.Now(),
 		SpectreState:  systems.SpectreVisualState{State: "normal"},
 	}
@@ -316,17 +322,27 @@ func (g *Game) handleInput() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF11) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
-	if g.State == StatePlaying || g.State == StatePaused {
-		if inpututil.IsKeyJustPressed(ebiten.KeyP) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	
+	// ESC Logic
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if g.Popup != nil || g.State == StatePaused {
+			// If we're in a popup or already paused, ESC takes us all the way back to Title
+			g.State = StateTitle
+			g.TitleTimer = 0
+			g.TypewriterChars = 0
+			g.Popup = nil
+			return
+		} else if g.State == StatePlaying {
+			// If we're just playing, ESC pauses the game to show the menu
+			g.State = StatePaused
+			return
+		}
+	}
+
+	if (g.State == StatePlaying || g.State == StatePaused) && g.Popup == nil {
+		if inpututil.IsKeyJustPressed(ebiten.KeyP) {
 			if g.State == StatePaused {
-				if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.Popup == nil {
-					g.State = StateTitle
-					g.TitleTimer = 0
-					g.TypewriterChars = 0
-					return
-				}
 				g.State = StatePlaying
-				g.Popup = nil
 			} else {
 				g.State = StatePaused
 			}
@@ -336,15 +352,53 @@ func (g *Game) handleInput() {
 
 func (g *Game) updatePausedState() error {
 	if g.Popup != nil {
-		if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
-			g.PopupPhotoIndex = (g.PopupPhotoIndex + 1) % len(g.Popup.Photos)
-		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
-			g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos)
-		}
-		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-			g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
-			g.TransitionTime = 0
+		if g.PopupAutoMode {
+			// Auto-advance logic
+			descIdx := g.getDescIndex()
+			fullText := g.Popup.Descriptions[descIdx]
+			
+			// Typewriter speed
+			const popupRevealSpeed = 40.0
+			if g.TypewriterChars < len(fullText) {
+				g.TypewriterChars++
+				if g.TypewriterChars % 2 == 0 {
+					g.World.Audio.Play("tick")
+				}
+			} else {
+				// Text finished, wait then advance
+				g.PopupWaitTimer += 1.0 / 60.0
+				if g.PopupWaitTimer > 4.5 { 
+					g.PopupWaitTimer = 0
+					g.PopupPhotoIndex++
+					if g.PopupPhotoIndex >= len(g.Popup.Photos) {
+						g.PopupAutoMode = false 
+						g.PopupPhotoIndex = len(g.Popup.Photos) - 1 
+						g.TypewriterChars = 9999
+					} else {
+						// Only reset typewriter if the description actually changes
+						newDescIdx := g.getDescIndex()
+						if newDescIdx != descIdx {
+							g.TypewriterChars = 0
+						}
+					}
+				}
+			}
+		} else {
+			// Manual control restored after sequence finishes
+			if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
+				g.PopupPhotoIndex = (g.PopupPhotoIndex + 1) % len(g.Popup.Photos)
+				g.TypewriterChars = 9999 
+				g.World.Audio.Play("blip")
+			}
+			if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
+				g.PopupPhotoIndex = (g.PopupPhotoIndex - 1 + len(g.Popup.Photos)) % len(g.Popup.Photos)
+				g.TypewriterChars = 9999
+				g.World.Audio.Play("blip")
+			}
+			if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+				g.State, g.Popup, g.TargetLevel = StateTransitioning, nil, g.CurrentLevel+1
+				g.TransitionTime = 0
+			}
 		}
 	} else {
 		if inpututil.IsKeyJustPressed(ebiten.KeyM) {
@@ -354,6 +408,22 @@ func (g *Game) updatePausedState() error {
 		}
 	}
 	return nil
+}
+
+func (g *Game) getDescIndex() int {
+	descIdx := g.PopupPhotoIndex
+	if len(g.Popup.Photos) == 4 && len(g.Popup.Descriptions) == 3 {
+		if g.PopupPhotoIndex == 1 || g.PopupPhotoIndex == 2 {
+			descIdx = 1
+		} else if g.PopupPhotoIndex == 3 {
+			descIdx = 2
+		} else {
+			descIdx = 0
+		}
+	} else if descIdx >= len(g.Popup.Descriptions) {
+		descIdx = len(g.Popup.Descriptions) - 1
+	}
+	return descIdx
 }
 
 func (g *Game) updateTransitionState() error {
@@ -411,7 +481,11 @@ func (g *Game) checkWinCondition(lvl *level.Level) error {
 			wellTrans := g.World.Transforms[id]
 			if wellTrans == nil { continue }
 			if core.DistWrapped(pSpec.Position, wellTrans.Position) < well.Radius+15 {
-				g.State, g.Popup, g.PopupTime, g.PopupPhotoIndex, g.ReunionPoint = StatePaused, &lvl.Memory, time.Now(), 0, pSpec.Position
+				g.State, g.Popup, g.PopupTime, g.PopupPhotoIndex = StatePaused, &lvl.Memory, time.Now(), 0
+				g.PopupAutoMode = true
+				g.PopupWaitTimer = 0
+				g.TypewriterChars = 0
+				g.ReunionPoint = pSpec.Position
 				g.World.Audio.Play("chime")
 				return nil
 			}
@@ -549,36 +623,117 @@ func (g *Game) drawPopup(screen *ebiten.Image) {
 	dt := float64(time.Since(g.PopupTime).Seconds())
 	scale := math.Min(1.0, dt*5.0)
 	scale = scale * (1.0 + 0.3*(1.0-scale))
-	bx, by, bw, bh := 300.0, 100.0, 680.0, 500.0
+	
+	// Dynamic Height Calculation
+	baseHeight := 500.0
+	extraHeight := 0.0
+	if g.Popup != nil {
+		descIdx := g.getDescIndex()
+		if descIdx >= 0 && descIdx < len(g.Popup.Descriptions) {
+			lines := splitLines(g.Popup.Descriptions[descIdx], 85)
+			textHeight := float64(len(lines) * 14)
+			if textHeight > 100 {
+				extraHeight = textHeight - 80 
+			}
+		}
+	}
+	
+	bx, by, bw, bh := 300.0, 100.0, 680.0, baseHeight + extraHeight
 	cx, cy := bx+bw/2, by+bh/2
 	bw, bh = bw*scale, bh*scale
 	bx, by = cx-bw/2, cy-bh/2
+	
 	vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), float32(bh), color.RGBA{10, 0, 10, 245}, false)
 	vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), float32(bh), 4, color.RGBA{180, 20, 40, 255}, false)
 	if scale > 0.9 { g.renderPopupContent(screen, bx, by, bw, bh) }
 }
 
 func (g *Game) renderPopupContent(screen *ebiten.Image, bx, by, bw, bh float64) {
-	ebitenutil.DebugPrintAt(screen, "[ MEMORY FRAGMENT ]", int(bx)+280, int(by)+20)
-	ebitenutil.DebugPrintAt(screen, g.Popup.Title, int(bx)+30, int(by)+50)
-	photoW, photoH := 400.0, 300.0
-	px, py := bx+(bw-photoW)/2, by+80
-	g.PopupRNG.Seed(int64(g.PopupPhotoIndex * 100))
-	for i := 0; i < 200; i++ {
-		rx, ry := g.PopupRNG.Float64()*photoW, g.PopupRNG.Float64()*photoH
-		c := uint8(g.PopupRNG.Intn(255))
-		cr, cg, cb := c, c, c
-		if g.PopupPhotoIndex == 0 { cr = 255; cg /= 2; cb /= 2 } else if g.PopupPhotoIndex == 1 { cr /= 2; cg = 255; cb /= 2 } else if g.PopupPhotoIndex == 2 { cr /= 2; cg /= 2; cb = 255 }
-		vector.DrawFilledRect(screen, float32(px+rx), float32(py+ry), float32(g.PopupRNG.Float64()*30), 2, color.RGBA{cr, cg, cb, 255}, false)
-	}
-	vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
+	// 1. Top Navigation Bar
+	ebitenutil.DebugPrintAt(screen, "[ESC] QUIT TO TITLE", int(bx)+20, int(by)+15)
+	ebitenutil.DebugPrintAt(screen, "--- MEMORY FRAGMENT ---", int(bx)+255, int(by)+15)
+
+	// 2. Metadata Section
+	ebitenutil.DebugPrintAt(screen, "SUBJECT: "+g.Popup.Title, int(bx)+30, int(by)+45)
 	if len(g.Popup.Photos) > 1 {
-		ebitenutil.DebugPrintAt(screen, "< PREV (A)", int(px)-80, int(py)+int(photoH)/2)
-		ebitenutil.DebugPrintAt(screen, "(D) NEXT >", int(px)+int(photoW)+10, int(py)+int(photoH)/2)
-		ebitenutil.DebugPrintAt(screen, "IMG "+string(rune('1'+g.PopupPhotoIndex))+"/"+string(rune('1'+len(g.Popup.Photos)-1)), int(px)+int(photoW)-60, int(py)+int(photoH)+10)
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("PHOTO RECORD: %d / %d", g.PopupPhotoIndex+1, len(g.Popup.Photos)), int(bx)+460, int(by)+45)
 	}
-	ebitenutil.DebugPrintAt(screen, g.Popup.Description, int(bx)+30, int(by)+400)
-	ebitenutil.DebugPrintAt(screen, "[ SPACE TO RECOVER ]", int(bx)+260, int(by)+470)
+
+	photoW, photoH := 400.0, 275.0
+	px, py := bx+(bw-photoW)/2, by+85
+
+	// Photo rendering
+	if g.PopupPhotoIndex < len(g.Popup.Photos) {
+		path := g.Popup.Photos[g.PopupPhotoIndex]
+		img, ok := g.PhotoCache[path]
+		if !ok {
+			var err error
+			img, _, err = ebitenutil.NewImageFromFile(path)
+			if err != nil {
+				log.Printf("failed to load photo %s: %v", path, err)
+			} else {
+				g.PhotoCache[path] = img
+			}
+		}
+
+		if img != nil {
+			iw, ih := img.Size()
+			sw := photoW / float64(iw)
+			sh := photoH / float64(ih)
+			s := math.Min(sw, sh)
+			
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Scale(s, s)
+			op.GeoM.Translate(px+(photoW-float64(iw)*s)/2, py+(photoH-float64(ih)*s)/2)
+			screen.DrawImage(img, op)
+		}
+	}
+
+	vector.StrokeRect(screen, float32(px), float32(py), float32(photoW), float32(photoH), 2, color.RGBA{100, 100, 100, 255}, false)
+
+	// 3. Side Navigation
+	if len(g.Popup.Photos) > 1 && !g.PopupAutoMode {
+		ebitenutil.DebugPrintAt(screen, "< [A] PREV", int(px)-90, int(py)+int(photoH)/2)
+		ebitenutil.DebugPrintAt(screen, "[D] NEXT >", int(px)+int(photoW)+10, int(py)+int(photoH)/2)
+	}
+
+	// 4. Description Section
+	descIdx := g.getDescIndex()
+	if descIdx >= 0 && descIdx < len(g.Popup.Descriptions) {
+		fullText := g.Popup.Descriptions[descIdx]
+		revealLen := g.TypewriterChars
+		if revealLen > len(fullText) { revealLen = len(fullText) }
+		
+		displayedText := fullText[:revealLen]
+		lines := splitLines(displayedText, 85) 
+		for i, line := range lines {
+			ebitenutil.DebugPrintAt(screen, line, int(bx)+30, int(by)+375+i*14) 
+		}
+	}
+
+	// 5. Footer Prompts
+	if !g.PopupAutoMode {
+		ebitenutil.DebugPrintAt(screen, "[ SPACE ] RECOVER FRAGMENT", int(bx)+245, int(by)+int(bh)-25)
+	} else {
+		ebitenutil.DebugPrintAt(screen, "( STABILIZING MEMORY DATA... )", int(bx)+235, int(by)+int(bh)-25)
+	}
+}
+
+func splitLines(s string, limit int) []string {
+	var lines []string
+	words := strings.Fields(s)
+	if len(words) == 0 { return nil }
+	current := words[0]
+	for _, w := range words[1:] {
+		if len(current)+1+len(w) > limit {
+			lines = append(lines, current)
+			current = w
+		} else {
+			current += " " + w
+		}
+	}
+	lines = append(lines, current)
+	return lines
 }
 
 func (g *Game) drawPauseMenu(screen *ebiten.Image) {
