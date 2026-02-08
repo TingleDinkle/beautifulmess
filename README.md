@@ -2,6 +2,8 @@
 
 This is a little world I'm building for you. It's a game about chasing memories, catching what's lost, and finding our way back to each other through the noise.
 
+## Special Video
+https://www.youtube.com/watch?v=W9YvktvuO2Q
 ## How to Play
 
 *   **Move around:** Use the **Arrow Keys** or **WASD**.
